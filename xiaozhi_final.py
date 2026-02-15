@@ -54,7 +54,10 @@ from fastapi import FastAPI, WebSocket, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 import websockets
-import pyautogui
+try:
+    import pyautogui
+except ImportError:
+    pyautogui = None  # Desktop automation not available (Docker/headless mode)
 import difflib
 import re
 

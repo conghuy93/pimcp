@@ -16,8 +16,8 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - SERPER_API_KEY=${SERPER_API_KEY:-}
     volumes:
-      # Mount config file để có thể cập nhật API keys
-      - ../xiaozhi_endpoints.json:/app/xiaozhi_endpoints.json
+      # Persistent config (API keys, endpoints)
+      - miniz_config:/app/config
       # Mount data directory
       - miniz_data:/app/data
       - miniz_logs:/app/logs
@@ -48,6 +48,7 @@ networks:
     driver: bridge
 
 volumes:
+  miniz_config:
   miniz_data:
   miniz_logs:
   # redis_data:

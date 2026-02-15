@@ -1521,45 +1521,114 @@ def load_endpoints_from_file():
     """Đọc cấu hình endpoints từ file JSON"""
     global GEMINI_API_KEY, OPENAI_API_KEY, SERPER_API_KEY
     
-    if CONFIG_FILE.exists():
+    endpoints = None
+    active_index = 0
+    
+    # 🔥 FIX: Handle case where CONFIG_FILE is a directory (Docker mount bug)
+    if CONFIG_FILE.exists() and CONFIG_FILE.is_dir():
+        print(f"⚠️ [Config] {CONFIG_FILE.name} is a directory! Removing and recreating as file...")
+        try:
+            import shutil
+            shutil.rmtree(str(CONFIG_FILE))
+        except Exception as e:
+            print(f"⚠️ [Config] Could not remove directory: {e}")
+    
+    if CONFIG_FILE.exists() and CONFIG_FILE.is_file():
         try:
             with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
                 data = json.load(f)
                 print(f"✅ [Config] Loaded {len(data.get('endpoints', []))} endpoints from {CONFIG_FILE.name}")
                 
+                endpoints = data.get('endpoints', [])
+                active_index = data.get('active_index', 0)
+                
                 # Load Gemini API key nếu có
                 if data.get('gemini_api_key'):
                     GEMINI_API_KEY = data['gemini_api_key']
-                    print(f"✅ [Gemini] API key loaded (ends with ...{GEMINI_API_KEY[-8:]})")
+                    print(f"✅ [Gemini] API key loaded from config (ends with ...{GEMINI_API_KEY[-8:]})")
                 
                 # Load OpenAI API key nếu có
                 if data.get('openai_api_key'):
                     OPENAI_API_KEY = data['openai_api_key']
-                    print(f"✅ [OpenAI] API key loaded (ends with ...{OPENAI_API_KEY[-8:]})")
+                    print(f"✅ [OpenAI] API key loaded from config (ends with ...{OPENAI_API_KEY[-8:]})")
                 
                 # Load Serper API key nếu có (Google Search)
                 if data.get('serper_api_key'):
                     SERPER_API_KEY = data['serper_api_key']
-                    # Cũng cập nhật vào environment variable để rag_system.py có thể dùng
-                    os.environ['SERPER_API_KEY'] = SERPER_API_KEY
-                    print(f"✅ [Serper] Google Search API key loaded (ends with ...{SERPER_API_KEY[-8:]})")
+                    print(f"✅ [Serper] Google Search API key loaded from config (ends with ...{SERPER_API_KEY[-8:]})")
                 
-                return data.get('endpoints', []), data.get('active_index', 0)
         except Exception as e:
             print(f"⚠️ [Config] Error loading {CONFIG_FILE.name}: {e}")
     
+    # 🔥 FIX: Fallback to environment variables (Docker support)
+    # Nếu API keys chưa được load từ file, thử lấy từ env vars
+    if not GEMINI_API_KEY:
+        env_key = os.environ.get('GEMINI_API_KEY', '').strip()
+        if env_key and env_key != 'your_gemini_api_key_here':
+            GEMINI_API_KEY = env_key
+            print(f"✅ [Gemini] API key loaded from ENV (ends with ...{GEMINI_API_KEY[-8:]})")
+    
+    if not OPENAI_API_KEY:
+        env_key = os.environ.get('OPENAI_API_KEY', '').strip()
+        if env_key and env_key != 'your_openai_api_key_here':
+            OPENAI_API_KEY = env_key
+            print(f"✅ [OpenAI] API key loaded from ENV (ends with ...{OPENAI_API_KEY[-8:]})")
+    
+    if not SERPER_API_KEY:
+        env_key = os.environ.get('SERPER_API_KEY', '').strip()
+        if env_key and env_key != 'your_serper_api_key_here':
+            SERPER_API_KEY = env_key
+            print(f"✅ [Serper] Google Search API key loaded from ENV (ends with ...{SERPER_API_KEY[-8:]})")
+    
+    # 🔥 FIX: Sync all API keys to os.environ for code paths that use os.getenv()
+    if GEMINI_API_KEY:
+        os.environ['GEMINI_API_KEY'] = GEMINI_API_KEY
+    if OPENAI_API_KEY:
+        os.environ['OPENAI_API_KEY'] = OPENAI_API_KEY
+    if SERPER_API_KEY:
+        os.environ['SERPER_API_KEY'] = SERPER_API_KEY
+    
+    # Nếu có endpoints từ file, trả về
+    if endpoints:
+        return endpoints, active_index
+    
     # Trả về cấu hình mặc định nếu không có file
-    return [
+    default_endpoints = [
         DEFAULT_ENDPOINT,
         {"name": "Thiết bị 2", "token": "", "enabled": False},
         {"name": "Thiết bị 3", "token": "", "enabled": False}
-    ], 0
+    ]
+    
+    # 🔥 FIX: Auto-save default config với env API keys (Docker first run)
+    if GEMINI_API_KEY or OPENAI_API_KEY or SERPER_API_KEY:
+        try:
+            init_data = {
+                'endpoints': default_endpoints,
+                'active_index': 0,
+                'gemini_api_key': GEMINI_API_KEY,
+                'openai_api_key': OPENAI_API_KEY,
+                'serper_api_key': SERPER_API_KEY,
+                'last_updated': datetime.now().isoformat()
+            }
+            with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+                json.dump(init_data, f, ensure_ascii=False, indent=2)
+            print(f"💾 [Config] Created initial config with ENV API keys at {CONFIG_FILE}")
+        except Exception as e:
+            print(f"⚠️ [Config] Could not create initial config: {e}")
+    
+    return default_endpoints, 0
 
 def save_endpoints_to_file(endpoints, active_index, force_save=False):
     """Lưu cấu hình endpoints vào file JSON - LUÔN LƯU khi có thay đổi"""
     global GEMINI_API_KEY, OPENAI_API_KEY, SERPER_API_KEY
     
     try:
+        # 🔥 FIX: Handle case where CONFIG_FILE is a directory
+        if CONFIG_FILE.exists() and CONFIG_FILE.is_dir():
+            import shutil
+            shutil.rmtree(str(CONFIG_FILE))
+            print(f"⚠️ [Config] Removed directory at {CONFIG_FILE.name}, recreating as file")
+        
         # Data mới cần lưu
         new_data = {
             'endpoints': endpoints,
@@ -1571,7 +1640,7 @@ def save_endpoints_to_file(endpoints, active_index, force_save=False):
         }
         
         # 🔥 FIX: Chỉ skip save nếu KHÔNG phải force_save và không có thay đổi
-        if not force_save and CONFIG_FILE.exists():
+        if not force_save and CONFIG_FILE.exists() and CONFIG_FILE.is_file():
             try:
                 with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
                     old_data = json.load(f)
@@ -23608,6 +23677,12 @@ async def save_gemini_key(data: dict):
         # Update global variable (allow empty)
         GEMINI_API_KEY = api_key
         
+        # 🔥 FIX: Sync to os.environ for code paths using os.getenv()
+        if api_key:
+            os.environ['GEMINI_API_KEY'] = api_key
+        else:
+            os.environ.pop('GEMINI_API_KEY', None)
+        
         # Save to file
         if save_endpoints_to_file(endpoints_config, active_endpoint_index):
             if api_key:
@@ -23644,6 +23719,12 @@ async def save_openai_key(data: dict):
         
         # Update global variable (allow empty)
         OPENAI_API_KEY = api_key
+        
+        # 🔥 FIX: Sync to os.environ for code paths using os.getenv()
+        if api_key:
+            os.environ['OPENAI_API_KEY'] = api_key
+        else:
+            os.environ.pop('OPENAI_API_KEY', None)
         
         # Save to file
         if save_endpoints_to_file(endpoints_config, active_endpoint_index):

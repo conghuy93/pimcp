@@ -36,7 +36,7 @@ COPY config_manager.py .
 
 # Tạo thư mục cho data, logs và config
 # xiaozhi_endpoints.json sẽ tự tạo runtime, static/templates embedded trong xiaozhi_final.py
-RUN mkdir -p /app/data /app/logs /app/static /app/templates
+RUN mkdir -p /app/data /app/logs /app/static /app/templates /app/config
 
 # Non-root user cho security
 RUN useradd --create-home --shell /bin/bash appuser \

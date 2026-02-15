@@ -9507,7 +9507,10 @@ async def ask_gpt4(prompt: str, model: str = "gpt-4o") -> dict:
 # Tham khảo từ: github.com/ZhongZiTongXue/xiaozhi-MCPTools
 # ============================================================
 
-import aiohttp
+try:
+    import aiohttp
+except ImportError:
+    aiohttp = None
 import urllib.parse
 
 async def get_daily_news() -> dict:

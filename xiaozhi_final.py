@@ -65,9 +65,18 @@ import re
 # Bypass license check completely
 LICENSE_SYSTEM_AVAILABLE = False  # FREE EDITION - No license required
 
-# Auto-startup manager
-import winreg
-class AutoStartupManager:
+# Auto-startup manager (Windows only)
+import sys
+import platform
+try:
+    import winreg
+    IS_WINDOWS = True
+except ImportError:
+    IS_WINDOWS = False
+    winreg = None  # Windows Registry not available on Linux
+
+if IS_WINDOWS:
+    class AutoStartupManager:
     APP_NAME = "miniZ_MCP_Professional"
     
     @staticmethod
@@ -101,6 +110,24 @@ class AutoStartupManager:
                 winreg.CloseKey(key)
                 return False
         except:
+            return False
+
+else:
+    # Dummy AutoStartupManager for non-Windows platforms
+    class AutoStartupManager:
+        APP_NAME = "miniZ_MCP_Professional"
+        
+        @staticmethod
+        def get_exe_path():
+            return os.path.abspath(__file__)
+        
+        @classmethod
+        def enable_autostart(cls):
+            print(f"⚠️ [Startup] Auto-start chỉ khả dụng trên Windows")
+            return False
+        
+        @classmethod
+        def is_autostart_enabled(cls):
             return False
 
 

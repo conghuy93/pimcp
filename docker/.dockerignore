@@ -1,0 +1,96 @@
+# ============================================================
+# Docker Ignore - Loại bỏ files không cần thiết khi build
+# ============================================================
+
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+env/
+
+# Build outputs
+dist/
+dist_*/
+build/
+build_*/
+*.spec
+output/
+installer_output/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Test files
+test_*.py
+TEST_*.bat
+TEST_*.py
+*_test.py
+
+# Documentation không cần cho Docker
+*.md
+!README.md
+*.txt
+!requirements*.txt
+
+# Installer files
+installer*.iss
+*.bat
+*.exe
+
+# Keys và licenses (bảo mật)
+*_KEYS*.txt
+*_KEYS*.json
+licenses*.json
+LICENSE_KEYS*
+Sample_Keys.txt
+
+# Backup files
+*.bak
+*.backup
+*_backup*
+_BACKUP*/
+
+# Build scripts
+build_*.py
+BUILD_*.bat
+generate_*.py
+
+# Logs
+*.log
+build_log.txt
+
+# Cache
+*.faiss
+*.pkl
+*_cache.json
+rag_cache.json
+
+# Music và media
+music_library/
+custom_music_folder.txt
+youtube_playlists.json
+
+# Icons và images (chỉ giữ cái cần)
+fw_images/
+icons/
+*.ico
+
+# Portable versions
+*_PORTABLE*/
+*.zip
+
+# Demo files
+demo_*.py
+DEMO_*.bat

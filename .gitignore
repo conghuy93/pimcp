@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# API Keys - KHÔNG push!
+.env
+xiaozhi_endpoints.json
+*_KEYS*.txt
+*.log
+
+# Cache
+*.faiss
+*.pkl
+*_cache.json

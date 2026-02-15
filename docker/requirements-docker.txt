@@ -1,0 +1,30 @@
+# miniZ MCP API - Docker Minimal Requirements
+# Chỉ bao gồm các dependencies cần thiết cho API
+
+# FastAPI Core
+fastapi==0.104.1
+uvicorn[standard]==0.38.0
+pydantic==2.5.0
+
+# HTTP Client
+httpx==0.25.1
+requests==2.31.0
+
+# WebSocket
+websockets==15.0.1
+
+# Multipart (file upload)
+python-multipart==0.0.6
+
+# System utilities
+psutil==5.9.6
+
+# AI APIs (optional - comment nếu không cần)
+google-generativeai==0.8.3
+openai==1.54.0
+
+# Web scraping (optional)
+beautifulsoup4
+
+# Encryption cho config
+cryptography>=41.0.0

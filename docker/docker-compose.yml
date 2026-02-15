@@ -1,0 +1,53 @@
+# ============================================================
+# miniZ MCP - Docker Compose Configuration
+# ============================================================
+version: '3.8'
+
+services:
+  miniz-api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: miniz-mcp-api
+    ports:
+      - "8000:8000"
+    environment:
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - SERPER_API_KEY=${SERPER_API_KEY:-}
+    volumes:
+      # Mount config file để có thể cập nhật API keys
+      - ../xiaozhi_endpoints.json:/app/xiaozhi_endpoints.json
+      # Mount data directory
+      - miniz_data:/app/data
+      - miniz_logs:/app/logs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/system_info"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - miniz-network
+
+  # Optional: Redis cho caching (nếu cần)
+  # redis:
+  #   image: redis:7-alpine
+  #   container_name: miniz-redis
+  #   ports:
+  #     - "6379:6379"
+  #   volumes:
+  #     - redis_data:/data
+  #   restart: unless-stopped
+  #   networks:
+  #     - miniz-network
+
+networks:
+  miniz-network:
+    driver: bridge
+
+volumes:
+  miniz_data:
+  miniz_logs:
+  # redis_data:

@@ -1513,7 +1513,7 @@ User: "Thời tiết Hà Nội?"
 
 DEFAULT_ENDPOINT = {
     "name": "Thiết bị 1",
-    "token": "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOjQ1MzYxMSwiYWdlbnRJZCI6OTQ0MjE4LCJlbmRwb2ludElkIjoiYWdlbnRfOTQ0MjE4IiwicHVycG9zZSI6Im1jcC1lbmRwb2ludCIsImlhdCI6MTc2MjA4NTI1OSwiZXhwIjoxNzkzNjQyODU5fQ.GK91-17mqarpETPwz7N6rZj5DaT7bJkpK7EM6lO0Rdmfztv_KeOTBP9R4Lvy3uXKMCJn3gwucvelCur95GAn5Q",
+    "token": "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOjQ1MzYxMSwiYWdlbnRJZCI6MTQ2OTg5OCwiZW5kcG9pbnRJZCI6ImFnZW50XzE0Njk4OTgiLCJwdXJwb3NlIjoibWNwLWVuZHBvaW50IiwiaWF0IjoxNzcxMTU2MDcwLCJleHAiOjE4MDI3MTM2NzB9.4A6_ULtlgpjirbPDzEeAgvtmIY7_Yhe6SkKWEeifTJpGanNnj2Ao4zECVT60LpMmzhxIF0wxxgkiLWZeE0iHRA",
     "enabled": True
 }
 
@@ -23611,7 +23611,7 @@ async def switch_endpoint(index: int):
     # Thay đổi endpoint và trigger reconnect
     old_index = active_endpoint_index
     active_endpoint_index = index
-    should_reconnect = True  # Trigger reconnect trong xiaozhi_websocket_client
+    should_reconnect[index] = True  # Trigger reconnect cho device được chuyển sang
     
     # Lưu vào file
     save_endpoints_to_file(endpoints_config, active_endpoint_index)
@@ -23651,7 +23651,7 @@ async def save_endpoints(data: dict):
         new_active_token = endpoints_config[active_endpoint_index].get('token', '') if active_endpoint_index < len(endpoints_config) else ''
         if old_active_token != new_active_token and new_active_token and old_active_token:
             # Token đã thay đổi (không phải lần đầu nhập)
-            should_reconnect = True
+            should_reconnect[active_endpoint_index] = True
             print(f"🔄 [Endpoint] Token changed for active device {active_endpoint_index}. Triggering reconnect...")
         
         return {"success": True, "message": "Đã lưu cấu hình"}

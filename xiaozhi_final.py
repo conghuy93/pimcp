@@ -77,40 +77,40 @@ except ImportError:
 
 if IS_WINDOWS:
     class AutoStartupManager:
-    APP_NAME = "miniZ_MCP_Professional"
-    
-    @staticmethod
-    def get_exe_path():
-        if getattr(sys, 'frozen', False):
-            return sys.executable
-        return os.path.abspath(__file__)
-    
-    @classmethod
-    def enable_autostart(cls):
-        try:
-            exe_path = cls.get_exe_path()
-            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Run", 0, winreg.KEY_SET_VALUE)
-            winreg.SetValueEx(key, cls.APP_NAME, 0, winreg.REG_SZ, f'"{exe_path}"')
-            winreg.CloseKey(key)
-            print(f"✅ [Startup] Đã bật khởi động cùng Windows")
-            return True
-        except Exception as e:
-            print(f"⚠️ [Startup] Không thể bật auto-start: {e}")
-            return False
-    
-    @classmethod
-    def is_autostart_enabled(cls):
-        try:
-            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Run", 0, winreg.KEY_READ)
+        APP_NAME = "miniZ_MCP_Professional"
+        
+        @staticmethod
+        def get_exe_path():
+            if getattr(sys, 'frozen', False):
+                return sys.executable
+            return os.path.abspath(__file__)
+        
+        @classmethod
+        def enable_autostart(cls):
             try:
-                winreg.QueryValueEx(key, cls.APP_NAME)
+                exe_path = cls.get_exe_path()
+                key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Run", 0, winreg.KEY_SET_VALUE)
+                winreg.SetValueEx(key, cls.APP_NAME, 0, winreg.REG_SZ, f'"{exe_path}"')
                 winreg.CloseKey(key)
+                print(f"✅ [Startup] Đã bật khởi động cùng Windows")
                 return True
-            except FileNotFoundError:
-                winreg.CloseKey(key)
+            except Exception as e:
+                print(f"⚠️ [Startup] Không thể bật auto-start: {e}")
                 return False
-        except:
-            return False
+        
+        @classmethod
+        def is_autostart_enabled(cls):
+            try:
+                key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Run", 0, winreg.KEY_READ)
+                try:
+                    winreg.QueryValueEx(key, cls.APP_NAME)
+                    winreg.CloseKey(key)
+                    return True
+                except FileNotFoundError:
+                    winreg.CloseKey(key)
+                    return False
+            except:
+                return False
 
 else:
     # Dummy AutoStartupManager for non-Windows platforms

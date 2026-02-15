@@ -26,18 +26,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY docker/requirements-docker.txt .
 RUN pip install --no-cache-dir -r requirements-docker.txt
 
-# Copy application files
+# Copy application files (core only)
 COPY xiaozhi_final.py .
 COPY config_manager.py .
-COPY xiaozhi_endpoints.json .
-COPY xiaozhi_endpoints_template.json .
 
-# Copy static và templates nếu có
-COPY static/ static/
-COPY templates/ templates/
-
-# Tạo thư mục cho data
-RUN mkdir -p /app/data /app/logs
+# Tạo thư mục cho data, logs và config
+# xiaozhi_endpoints.json sẽ tự tạo runtime, static/templates embedded trong xiaozhi_final.py
+RUN mkdir -p /app/data /app/logs /app/static /app/templates
 
 # Non-root user cho security
 RUN useradd --create-home --shell /bin/bash appuser \

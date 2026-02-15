@@ -109,6 +109,16 @@ README.md
 cd docker
 ```
 
+**⚠️ QUAN TRỌNG:** Đảm bảo bạn đang ở đúng thư mục! Kiểm tra:
+
+```bash
+pwd
+# Phải hiển thị: /home/huy123/apps/pimcp/docker (hoặc tương tự)
+
+ls -la
+# Phải thấy: docker-compose.yml, Dockerfile, .env.example, docker-build.sh
+```
+
 ### 3.2. Tạo file .env từ template
 
 ```bash
@@ -373,6 +383,42 @@ Ngrok sẽ cho bạn URL public: `https://abc123.ngrok.io`
 ---
 
 ## 🚨 KHẮC PHỤC SỰ CỐ
+
+### ❌ "no configuration file provided: not found"
+
+**Nguyên nhân:** Bạn đang ở sai thư mục!
+
+**Giải pháp:**
+
+```bash
+# Vào đúng thư mục docker
+cd ~/apps/pimcp/docker
+
+# Kiểm tra
+pwd
+# Phải hiển thị: /home/[user]/apps/pimcp/docker
+
+# Thử lại
+docker compose up -d --build
+```
+
+### ❌ "chmod: cannot access 'docker-build.sh': No such file or directory"
+
+**Nguyên nhân:** Bạn đang ở sai thư mục!
+
+**Giải pháp:**
+
+```bash
+# Vào đúng thư mục
+cd ~/apps/pimcp/docker
+
+# Kiểm tra file tồn tại
+ls -la docker-build.sh
+
+# Thử lại
+chmod +x docker-build.sh
+./docker-build.sh
+```
 
 ### Container không start
 

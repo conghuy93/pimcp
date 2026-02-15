@@ -16,9 +16,13 @@ ENV APP_HOME=/app
 # Working directory
 WORKDIR $APP_HOME
 
-# Install system dependencies
+# Install system dependencies including build tools
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
+    gcc \
+    g++ \
+    python3-dev \
+    build-essential \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 

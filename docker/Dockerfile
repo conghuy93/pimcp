@@ -33,6 +33,8 @@ RUN pip install --no-cache-dir -r requirements-docker.txt
 # Copy application files (core only)
 COPY xiaozhi_final.py .
 COPY config_manager.py .
+COPY rag_system.py .
+COPY crypto_api.py .
 
 # Tạo thư mục cho data, logs và config
 # xiaozhi_endpoints.json sẽ tự tạo runtime, static/templates embedded trong xiaozhi_final.py

@@ -29,5 +29,8 @@ aiohttp
 # Web scraping (optional)
 beautifulsoup4
 
+# RAG System - Web search
+duckduckgo-search>=4.0
+
 # Encryption cho config
 cryptography>=41.0.0

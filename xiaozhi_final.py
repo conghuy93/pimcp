@@ -9273,6 +9273,14 @@ async def ask_gemini_with_tools(
                     
                     try:
                         handler = TOOLS[tool_name]["handler"]
+                        if handler is None:
+                            tools_results.append({
+                                "tool": tool_name,
+                                "success": False,
+                                "error": f"Tool '{tool_name}' không khả dụng (thiếu module)"
+                            })
+                            print(f"   ❌ {tool_name}: handler is None")
+                            continue
                         result = await handler(**tool_args)
                         
                         tools_called.append(tool_name)
@@ -14037,7 +14045,12 @@ async def handle_xiaozhi_message(message: dict) -> dict:
         
         for attempt in range(max_retries):
             try:
-                result = await TOOLS[tool_name]["handler"](**args)
+                handler = TOOLS[tool_name]["handler"]
+                if handler is None:
+                    error_msg = f"Tool '{tool_name}' không khả dụng (thiếu module). Vui lòng dùng tool khác."
+                    print(f"❌ [Tool] {tool_name}: handler is None (missing dependency)")
+                    return {"content": [{"type": "text", "text": error_msg}], "isError": True}
+                result = await handler(**args)
                 print(f"✅ [Tool Result] {tool_name}: {result}")
                 
                 # Thêm VLC context vào music-related tools
@@ -14345,7 +14358,9 @@ async def xiaozhi_websocket_client(device_index: int = 0):
                                     try:
                                         # call the handler (handlers may be async)
                                         handler = TOOLS[next_tool]["handler"]
-                                        if asyncio.iscoroutinefunction(handler):
+                                        if handler is None:
+                                            print(f"❌ [Auto Action] {next_tool}: handler is None (missing dependency)")
+                                        elif asyncio.iscoroutinefunction(handler):
                                             res2 = await handler(**next_params)
                                         else:
                                             # run sync handlers in executor
@@ -20406,6 +20421,8 @@ async def call_any_tool(data: dict):
     
     try:
         handler = TOOLS[tool_name]["handler"]
+        if handler is None:
+            return {"success": False, "error": f"Tool '{tool_name}' không khả dụng (thiếu module)"}
         result = await handler(**args)
         return result
     except Exception as e:

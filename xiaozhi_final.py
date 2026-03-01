@@ -12576,1029 +12576,227 @@ def send_message_to_llm_sync(message: str, device_index: int = None, wait_respon
 
 TOOLS = {
     # ============================================================
-    # 📨 SEND MESSAGE TO LLM - Gửi tin nhắn cho robot/LLM tự trả lời
+    # 📨 DOCKER EDITION - Chỉ giữ tools hoạt động trên Docker/Pi
     # ============================================================
     "send_message_to_llm": {
         "handler": send_message_to_llm,
-        "description": "📨 GỬI TIN NHẮN CHO LLM/ROBOT - Gửi message qua WebSocket để LLM cloud đọc và TỰ TRẢ LỜI. Use when: 'gửi tin nhắn cho robot', 'nói với AI', 'chat với LLM', 'hỏi robot', 'send message to AI'. Robot sẽ đọc được tin nhắn và tự động phản hồi qua giọng nói hoặc text.",
+        "description": "📨 GỬI TIN NHẮN CHO LLM/ROBOT - Gửi message qua WebSocket để LLM cloud đọc và TỰ TRẢ LỜI.",
         "parameters": {
-            "message": {
-                "type": "string",
-                "description": "Tin nhắn/câu hỏi muốn gửi cho LLM. VD: 'Xin chào', 'Hôm nay thời tiết thế nào?', 'Kể cho tôi một câu chuyện'",
-                "required": True
-            },
-            "device_index": {
-                "type": "integer",
-                "description": "Index thiết bị (0, 1, hoặc 2). Mặc định: thiết bị đang active. 0=Thiết bị 1, 1=Thiết bị 2, 2=Thiết bị 3",
-                "required": False
-            },
-            "wait_response": {
-                "type": "boolean",
-                "description": "Có đợi LLM trả lời không? True=đợi response (mặc định), False=gửi xong trả về luôn",
-                "required": False
-            },
-            "timeout": {
-                "type": "integer",
-                "description": "Thời gian chờ response (giây). Mặc định 30 giây.",
-                "required": False
-            }
+            "message": {"type": "string", "description": "Tin nhắn/câu hỏi muốn gửi cho LLM", "required": True},
+            "device_index": {"type": "integer", "description": "Index thiết bị (0, 1, hoặc 2)", "required": False},
+            "wait_response": {"type": "boolean", "description": "Có đợi LLM trả lời không?", "required": False},
+            "timeout": {"type": "integer", "description": "Thời gian chờ response (giây)", "required": False}
         }
     },
     "broadcast_to_all_llm": {
         "handler": broadcast_to_all_llm,
-        "description": "📢 BROADCAST TIN NHẮN ĐẾN TẤT CẢ LLM/ROBOT - Gửi cùng một message đến tất cả thiết bị đang kết nối. Use when: 'gửi tin nhắn cho tất cả robot', 'broadcast message', 'thông báo cho tất cả AI'.",
+        "description": "📢 BROADCAST TIN NHẮN ĐẾN TẤT CẢ LLM/ROBOT.",
         "parameters": {
-            "message": {
-                "type": "string",
-                "description": "Tin nhắn muốn broadcast đến tất cả thiết bị",
-                "required": True
-            },
-            "wait_response": {
-                "type": "boolean",
-                "description": "Có đợi response từ các thiết bị không? Mặc định False (broadcast thường không đợi)",
-                "required": False
-            }
+            "message": {"type": "string", "description": "Tin nhắn muốn broadcast", "required": True},
+            "wait_response": {"type": "boolean", "description": "Có đợi response không?", "required": False}
         }
     },
-    
-    "get_hardware_specs": {
-        "handler": get_system_info,
-        "description": "💻🔥 SPECS CẤU HÌNH HARDWARE - DUY NHẤT tool cho câu hỏi: 'cấu hình máy tính gì', 'máy tính này như thế nào', 'card đồ họa gì', 'CPU gì', 'GPU gì', 'mainboard gì', 'thế hệ CPU', 'RTX RTX mấy', 'Intel thế hệ mấy', 'AMD Ryzen mấy'. Trả về: CPU generation (Intel 13th gen), GPU series (RTX 4080), motherboard, BIOS, RAM specs. KHÔNG dùng cho performance monitoring!",
-        "parameters": {
-            "category": {
-                "type": "string",
-                "description": "'cpu', 'gpu', 'motherboard', 'memory', 'all'. Mặc định: all",
-                "required": False
-            }
-        }
-    },
-    "set_volume": {
-        "handler": set_volume, 
-        "description": "ĐIỀU CHỈNH âm lượng máy tính đến mức CỤ THỂ (0-100%). Use when user says: 'chỉnh âm lượng 50', 'đặt âm lượng 80', 'volume 30', 'set volume to 60', 'để âm lượng ở mức 40'. Examples: level=50 (âm lượng vừa), level=80 (to), level=20 (nhỏ), level=0 (tắt hẳn).", 
-        "parameters": {"level": {"type": "integer", "description": "Mức âm lượng từ 0-100 (0=tắt hẳn, 50=vừa phải, 100=tối đa)", "required": True}}
-    },
-    "get_volume": {"handler": get_volume, "description": "Kiểm tra mức âm lượng hiện tại của máy tính. Use when: 'âm lượng bao nhiêu', 'check volume', 'xem âm lượng'", "parameters": {}},
-    "mute_volume": {"handler": mute_volume, "description": "TẮT TIẾNG máy tính (mute) hoàn toàn. Use when: 'tắt tiếng', 'mute', 'câm', 'im lặng'", "parameters": {}},
-    "unmute_volume": {"handler": unmute_volume, "description": "BẬT LẠI TIẾNG máy tính (unmute). Use when: 'bật tiếng', 'unmute', 'mở tiếng lại'", "parameters": {}},
-    "volume_up": {"handler": volume_up, "description": "TĂNG âm lượng lên một chút (mỗi bước ~2%). Use when: 'tăng âm lượng', 'to hơn', 'volume up', 'lớn hơn'", "parameters": {"steps": {"type": "integer", "description": "Số bước tăng (mặc định 5 = tăng ~10%)", "required": False}}},
-    "volume_down": {"handler": volume_down, "description": "GIẢM âm lượng xuống một chút (mỗi bước ~2%). Use when: 'giảm âm lượng', 'nhỏ hơn', 'volume down', 'bớt to'", "parameters": {"steps": {"type": "integer", "description": "Số bước giảm (mặc định 5 = giảm ~10%)", "required": False}}},
-    "take_screenshot": {
-        "handler": take_screenshot, 
-        "description": "Chụp màn hình toàn bộ và LƯU FILE ẢNH. Tự động lưu vào thư mục Downloads với tên file có timestamp. Use when user asks: 'chụp màn hình', 'screenshot', 'capture screen'.", 
-        "parameters": {
-            "filename": {
-                "type": "string",
-                "description": "Tên file lưu ảnh (optional). Mặc định: screenshot_YYYYMMDD_HHMMSS.png. Ví dụ: 'my_screen.png'",
-                "required": False
-            }
-        }
-    },
-    "show_notification": {"handler": show_notification, "description": "Hiển thị thông báo", "parameters": {"title": {"type": "string", "description": "Tiêu đề", "required": True}, "message": {"type": "string", "description": "Nội dung", "required": True}}},
-    "get_system_resources": {"handler": get_system_resources, "description": "📊 PERFORMANCE MONITORING - CHỈ để xem CPU %, RAM %, Disk % đang sử dụng. CHO PERFORMANCE/MONITOR, KHÔNG cho câu hỏi về 'cấu hình máy tính', 'GPU gì', 'CPU gì'. Dùng get_hardware_specs cho hardware specs!", "parameters": {}},
+    "get_system_resources": {"handler": get_system_resources, "description": "📊 PERFORMANCE MONITORING - CPU %, RAM %, Disk %", "parameters": {}},
     "get_current_time": {"handler": get_current_time, "description": "Thời gian hiện tại", "parameters": {}},
     "calculator": {"handler": calculator, "description": "Tính toán", "parameters": {"expression": {"type": "string", "description": "Biểu thức", "required": True}}},
-    "open_application": {
-        "handler": open_application, 
-        "description": "Mở ứng dụng Windows với tìm kiếm thông minh. HỖ TRỢ 50+ ỨNG DỤNG: Windows (notepad, calc, paint, cmd, taskmgr), Browsers (chrome, firefox, edge, brave), Microsoft Office (word, excel, powerpoint, outlook, teams), Adobe Creative (photoshop, illustrator, premiere, after effects, lightroom), Development (vscode, pycharm, sublime, notepad++), 3D/Design (blender, maya, autocad, solidworks, fusion360), Communication (discord, slack, zoom, telegram, zalo), Media (vlc, spotify, itunes). Hỗ trợ tên TIẾNG VIỆT ('máy tính'→Calculator, 'máy ghi chú'→Notepad). Tự động tìm trong PATH, Registry, Program Files. Ví dụ: 'photoshop', 'excel', 'chrome', 'blender'.", 
-        "parameters": {
-            "app_name": {
-                "type": "string", 
-                "description": "Tên ứng dụng (ví dụ: 'excel', 'photoshop', 'chrome', 'vscode', 'blender', 'word'). Có thể dùng tên đầy đủ ('microsoft excel') hoặc viết tắt ('ps'→Photoshop). Hỗ trợ tiếng Việt.", 
-                "required": True
-            }
-        }
-    },
-    "list_running_processes": {"handler": list_running_processes, "description": "Liệt kê tiến trình", "parameters": {"limit": {"type": "integer", "description": "Số lượng", "required": False}}},
-    "find_process": {
-        "handler": find_process,
-        "description": "🔍 TÌM KIẾM PROCESS - Tìm process cụ thể theo tên hoặc xem tất cả. Triggers: 'tìm process excel', 'excel có chạy không', 'process nào đang chạy'. Better than list_running_processes with limit.",
-        "parameters": {
-            "name_pattern": {"type": "string", "description": "Tên process cần tìm (VD: 'excel', 'chrome', 'notepad'). Để trống = tất cả", "required": False},
-            "show_all": {"type": "boolean", "description": "True=hiển thị tất cả process, False=chỉ top 20 (default)", "required": False}
-        }
-    },
-    "kill_process": {
-        "handler": kill_process, 
-        "description": "🔪 Kill tiến trình theo tên hoặc PID. Có thể kill ngay lập tức (force=True) hoặc đóng mềm (force=False). VD: 'kill notepad', 'tắt chrome'", 
-        "parameters": {
-            "identifier": {"type": "string", "description": "Tên app hoặc PID. VD: notepad, chrome, 1234", "required": True},
-            "force": {"type": "boolean", "description": "True=kill ngay (mặc định), False=đóng mềm", "required": False},
-            "exact_match": {"type": "boolean", "description": "True=tên khớp chính xác, False=chứa tên là được (mặc định)", "required": False}
-        }
-    },
-    "force_kill_app": {
-        "handler": force_kill_app, 
-        "description": "💀 FORCE KILL APP NGAY LẬP TỨC - không hỏi han, kill hết tất cả instances. Dùng khi cần kill app ngay, không chờ đợi. VD: 'force kill chrome', 'buộc tắt notepad'", 
-        "parameters": {
-            "app_name": {"type": "string", "description": "Tên app cần force kill. VD: notepad, chrome, firefox, Code", "required": True}
-        }
-    },
+    # File/Process tools (Docker compatible)
     "create_file": {"handler": create_file, "description": "Tạo file", "parameters": {"path": {"type": "string", "description": "Đường dẫn", "required": True}, "content": {"type": "string", "description": "Nội dung", "required": True}}},
     "read_file": {"handler": read_file, "description": "Đọc file", "parameters": {"path": {"type": "string", "description": "Đường dẫn", "required": True}}},
     "list_files": {"handler": list_files, "description": "Liệt kê files", "parameters": {"directory": {"type": "string", "description": "Thư mục", "required": True}}},
-    "get_battery_status": {"handler": get_battery_status, "description": "Thông tin pin", "parameters": {}},
     "get_network_info": {"handler": get_network_info, "description": "Thông tin mạng", "parameters": {}},
-    "search_web": {"handler": search_web, "description": "MỞ TRÌNH DUYỆT để tìm kiếm trên Google. CHỈ dùng khi user YÊU CẦU MỞ BROWSER để search (ví dụ: 'mở google tìm kiếm...', 'search google về...'). KHÔNG dùng để trả lời câu hỏi - hãy dùng ask_gemini thay vì search_web cho câu hỏi thông thường", "parameters": {"query": {"type": "string", "description": "Từ khóa", "required": True}}},
-    
-    # MEDIA PLAYER CONTROLS (Chủ yếu cho Spotify, YouTube, VLC - WMP có giới hạn)
-    "media_play_pause": {
-        "handler": media_play_pause, 
-        "description": "⏯️ Phát/Tạm dừng external media players (Spotify, YouTube, VLC, iTunes, Discord, Chrome video...). Dùng Windows media keys. ⚠️ LƯU Ý: KHÔNG hoạt động tốt với music_library (Windows Media Player tự đóng sau khi phát). Dùng stop_music() để dừng music_library. Ví dụ: 'tạm dừng spotify', 'pause youtube'.", 
-        "parameters": {}
-    },
-    "media_next_track": {
-        "handler": media_next_track, 
-        "description": "⏭️ Chuyển bài tiếp theo trên playlist. Hoạt động với: Spotify, YouTube playlist, VLC, iTunes. ⚠️ KHÔNG dùng cho music_library (WMP tự đóng). Ví dụ: 'bài tiếp spotify', 'next youtube'.", 
-        "parameters": {}
-    },
-    "media_previous_track": {
-        "handler": media_previous_track, 
-        "description": "⏮️ Quay lại bài trước. Hoạt động với: Spotify, YouTube, VLC, iTunes. ⚠️ KHÔNG dùng cho music_library. Ví dụ: 'bài trước spotify', 'previous vlc'.", 
-        "parameters": {}
-    },
-    "media_stop": {
-        "handler": media_stop, 
-        "description": "⏹️ Dừng phát external media players. Hoạt động với Spotify, VLC, YouTube. Với music_library, dùng stop_music() thay thế (đóng Windows Media Player). Ví dụ: 'stop spotify', 'dừng vlc'.", 
-        "parameters": {}
-    },
-    "media_control": {
-        "handler": media_control, 
-        "description": "🎛️ Tool TỔNG HỢP điều khiển EXTERNAL media players (Spotify, YouTube, VLC, iTunes...). Hỗ trợ: play, pause, next, previous, stop, volume_up, volume_down, mute. ⚠️ KHÔNG dùng cho music_library (dùng stop_music). Best for: Spotify, YouTube, VLC. Ví dụ: media_control('next') cho Spotify, media_control('pause') cho YouTube.", 
-        "parameters": {
-            "action": {
-                "type": "string", 
-                "description": "Hành động: 'play', 'pause', 'next', 'previous', 'stop', 'volume_up', 'volume_down', 'mute'. Ví dụ: 'next', 'pause', 'mute'.", 
-                "required": True
-            }
-        }
-    },
-    
-    "save_music_folder_config": {
-        "handler": save_music_folder_config,
-        "description": "Save user's music folder path configuration. This folder will be prioritized for playing music using Windows default media player.",
-        "parameters": {
-            "folder_path": {
-                "type": "string",
-                "description": r"Full path to user's music folder (e.g., C:\Users\Name\Music)",
-                "required": True
-            }
-        }
-    },
-    "play_music_from_user_folder": {
-        "handler": play_music_from_user_folder,
-        "description": "🎵 [PYTHON-VLC] ⭐ ƯU TIÊN #1: Phát nhạc từ THƯ MỤC NGƯỜI DÙNG ĐÃ CẤU HÌNH (link riêng). Khi user nói 'phát nhạc từ thư mục của tôi', 'play từ folder F:', 'nhạc trong ổ D' → DÙNG TOOL NÀY! Tìm theo tên bài: filename='tên bài'. NHANH vì dùng Python-VLC nội bộ. Nếu chưa config thì báo lỗi → user cần vào Music Settings.",
-        "parameters": {
-            "filename": {
-                "type": "string",
-                "description": "Tên bài hát cần tìm (tìm partial match). Để trống = phát bài đầu trong thư mục.",
-                "required": False
-            },
-            "auto_play": {
-                "type": "boolean",
-                "description": "Tự động phát? Default True.",
-                "required": False
-            }
-        }
-    },
-    
-    "get_active_media_players": {
-        "handler": get_active_media_players,
-        "description": "🔍 [KHÔNG CẦN GỌI] Lấy danh sách media players đang chạy. ⚠️ KHÔNG CẦN gọi tool này trước khi điều khiển nhạc! Nhạc local LUÔN dùng Python-VLC (pause_music, stop_music, music_next). YouTube LUÔN dùng youtube_* tools.",
-        "parameters": {}
-    },
-    
-    # TASK MEMORY TOOLS - Ghi nhớ tác vụ để phản hồi nhanh và chính xác
+    "get_disk_usage": {"handler": get_disk_usage, "description": "Thông tin đĩa", "parameters": {}},
+    "check_internet_connection": {"handler": check_internet_connection, "description": "🌐 Kiểm tra kết nối Internet", "parameters": {}},
+
+    # Task memory
     "remember_task": {
         "handler": remember_task,
-        "description": "📝 GHI NHỚ TÁC VỤ - Lưu lại tác vụ đã thực hiện vào bộ nhớ dài hạn. Giúp AI nhớ những gì đã làm để phản hồi nhanh và chính xác hơn. Gọi tool này SAU KHI hoàn thành một tác vụ quan trọng.",
+        "description": "📝 GHI NHỚ TÁC VỤ",
         "parameters": {
             "tool_name": {"type": "string", "description": "Tên tool đã sử dụng", "required": True},
-            "params": {"type": "object", "description": "Tham số đã dùng (optional)", "required": False},
+            "params": {"type": "object", "description": "Tham số đã dùng", "required": False},
             "result_message": {"type": "string", "description": "Kết quả/message", "required": False},
             "user_request": {"type": "string", "description": "Yêu cầu gốc của user", "required": False}
         }
     },
     "recall_tasks": {
         "handler": recall_tasks,
-        "description": "🧠 NHỚ LẠI TÁC VỤ - Truy vấn lịch sử các tác vụ đã thực hiện. Gọi tool này ĐẦU TIÊN khi user hỏi 'đã làm gì', 'nhắc lại', 'lần trước', hoặc khi cần context về các tác vụ trước đó.",
+        "description": "🧠 NHỚ LẠI TÁC VỤ",
         "parameters": {
-            "keyword": {"type": "string", "description": "Từ khóa tìm kiếm (optional). Để trống = lấy tác vụ gần nhất", "required": False},
-            "limit": {"type": "integer", "description": "Số lượng tác vụ tối đa (default 10)", "required": False}
+            "keyword": {"type": "string", "description": "Từ khóa tìm kiếm", "required": False},
+            "limit": {"type": "integer", "description": "Số lượng tối đa", "required": False}
         }
     },
-    "get_task_summary": {
-        "handler": get_task_summary,
-        "description": "📊 THỐNG KÊ TÁC VỤ - Lấy tổng hợp về các tác vụ đã thực hiện. Cho biết tools nào được dùng nhiều nhất, tỷ lệ thành công. Dùng khi user hỏi 'thống kê', 'báo cáo', 'đã dùng tools gì'.",
-        "parameters": {}
-    },
-    "forget_all_tasks": {
-        "handler": forget_all_tasks,
-        "description": "🗑️ XÓA LỊCH SỬ - Xóa toàn bộ lịch sử tác vụ đã ghi nhớ. CHỈ DÙNG khi user yêu cầu rõ ràng 'xóa lịch sử', 'quên hết', 'reset memory'.",
-        "parameters": {}
-    },
-    
-    "set_brightness": {"handler": set_brightness, "description": "Độ sáng màn hình", "parameters": {"level": {"type": "integer", "description": "Độ sáng 0-100", "required": True}}},
-    "get_clipboard": {"handler": get_clipboard, "description": "Lấy clipboard", "parameters": {}},
-    "set_clipboard": {"handler": set_clipboard, "description": "Đặt clipboard", "parameters": {"text": {"type": "string", "description": "Nội dung", "required": True}}},
-    "play_sound": {"handler": play_sound, "description": "Phát âm thanh", "parameters": {"frequency": {"type": "integer", "description": "Tần số Hz", "required": False}, "duration": {"type": "integer", "description": "Thời gian ms", "required": False}}},
-    "get_disk_usage": {"handler": get_disk_usage, "description": "Thông tin đĩa", "parameters": {}},
-    
-    # ============================================================
-    # 🎵 MUSIC LIBRARY TOOLS - PYTHON-VLC (LOCAL FILES)
-    # Dùng cho file nhạc .mp3/.wav/.flac trong máy tính
-    # KHÔNG dùng cho YouTube - YouTube có tools riêng (youtube_*)
-    # ============================================================
-    "list_music": {
-        "handler": list_music, 
-        "description": "📂 [LOCAL MUSIC] Liệt kê tất cả nhạc trong thư viện music_library. Triggers: 'xem danh sách nhạc', 'có bài gì', 'list music'. Auto-play mặc định = True (phát bài đầu tiên). Dùng subfolder='Pop' để lọc theo thể loại.", 
-        "parameters": {
-            "subfolder": {
-                "type": "string", 
-                "description": "Thư mục con để lọc (VD: 'Pop', 'Rock', 'EDM'). Để trống = tất cả.", 
-                "required": False
-            },
-            "auto_play": {
-                "type": "boolean",
-                "description": "Tự động phát bài đầu tiên? Default=True. Set False nếu chỉ muốn xem danh sách.",
-                "required": False
-            }
-        }
-    },
-    "play_music": {
-        "handler": play_music, 
-        "description": "🎵 PHÁT NHẠC LOCAL (Python-VLC) - Triggers: 'phát nhạc', 'bật nhạc', 'mở nhạc', 'nghe nhạc', 'play nhạc', 'phát bài [tên]', 'phat nhac', 'bat nhac'. VD: 'phát bài đa nghi' → play_music(filename='đa nghi'). ⚠️ Nếu user nói 'youtube/video' → dùng open_youtube!", 
-        "parameters": {
-            "filename": {
-                "type": "string", 
-                "description": "Tên bài nhạc (partial match). VD: 'đa nghi', 'in love'. Hỗ trợ tiếng Việt.", 
-                "required": True
-            },
-            "create_playlist": {
-                "type": "boolean",
-                "description": "Tạo playlist (default True).",
-                "required": False
-            }
-        }
-    },
-    "pause_music": {
-        "handler": pause_music,
-        "description": "⏸️ TẠM DỪNG NHẠC - ⭐ GỌI NGAY khi user nói: 'dừng', 'dừng nhạc', 'tạm dừng', 'pause', 'ngừng', 'ngưng nhạc', 'nghỉ', 'im đi', 'dừng lại'. Voice: 'dung', 'dung nhac', 'tam dung', 'pao', 'poz', 'ngung', 'dung lai'. Không cần parameter - gọi pause_music() là xong! ⚠️ Nếu có 'youtube' → youtube_play_pause()",
-        "parameters": {}
-    },
-    "resume_music": {
-        "handler": resume_music,
-        "description": "▶️ TIẾP TỤC PHÁT - ⭐ GỌI NGAY khi user nói: 'tiếp tục', 'phát tiếp', 'play lại', 'mở lại', 'phát đi', 'chơi tiếp'. Voice: 'tiep tuc', 'phat tiep', 'mo lai', 'bat lai'. Không cần parameter - gọi resume_music() là xong!",
-        "parameters": {}
-    },
-    "stop_music": {
-        "handler": stop_music, 
-        "description": "⏹️ TẮT NHẠC HOÀN TOÀN - ⭐ GỌI NGAY khi user nói: 'tắt nhạc', 'dừng hẳn', 'stop', 'off nhạc', 'không nghe nữa', 'tắt đi'. Voice: 'tat nhac', 'dung han', 'stóp', 'of nhac'. Không cần parameter - gọi stop_music() là xong!", 
-        "parameters": {}
-    },
-    
-    # 🌟 SMART MUSIC CONTROL - Tool thông minh nhất
-    "smart_music_control": {
-        "handler": smart_music_control,
-        "description": "🎵🔥 ĐIỀU KHIỂN NHẠC THÔNG MINH - ⭐ GỌI KHI nghe: 'bài tiếp/next/chuyển bài', 'bài trước/quay lại', 'dừng/pause/tạm dừng', 'tắt nhạc/stop', 'phát bài [tên]', 'tăng/giảm âm lượng'. Voice: 'bai tiep', 'bai truoc', 'dung nhac', 'tam dung', 'pao'. VD: smart_music_control('bài tiếp'), smart_music_control('dừng'). Tool tự xử lý tất cả!",
-        "parameters": {
-            "command": {
-                "type": "string",
-                "description": "Lệnh tiếng Việt/English. VD: 'bài tiếp', 'bài trước', 'dừng', 'pause', 'phát bài love'",
-                "required": True
-            }
-        }
-    },
-    
-    "detect_and_execute_music": {
-        "handler": detect_and_execute_music,
-        "description": "🎵🔍 TỰ ĐỘNG PHÁT HIỆN LỆNH NHẠC - Kiểm tra input có phải lệnh nhạc không và tự động thực thi. Dùng khi không chắc input có phải lệnh nhạc.",
-        "parameters": {
-            "text": {
-                "type": "string", 
-                "description": "Text cần kiểm tra",
-                "required": True
-            }
-        }
-    },
-    
-    "music_next": {
-        "handler": music_next,
-        "description": "⏭️ BÀI TIẾP THEO - ⭐ GỌI NGAY khi user nói: 'bài tiếp', 'bài tiếp theo', 'chuyển bài', 'bài khác', 'next', 'skip', 'kế tiếp', 'sang bài', 'bài sau'. Voice: 'bai tiep', 'chuyen bai', 'bai khac', 'tiep theo', 'ke tiep', 'nex', 'ních'. Không cần parameter - gọi music_next() là xong!",
-        "parameters": {}
-    },
-    "music_previous": {
-        "handler": music_previous,
-        "description": "⏮️ BÀI TRƯỚC - ⭐ GỌI NGAY khi user nói: 'bài trước', 'quay lại', 'bài trước đó', 'previous', 'back', 'lùi bài', 'bài cũ'. Voice: 'bai truoc', 'quay lai', 'lui bai', 'bai cu', 'pre', 'prê'. Không cần parameter - gọi music_previous() là xong!",
-        "parameters": {}
-    },
-    "get_music_status": {
-        "handler": get_music_status,
-        "description": "📊 TRẠNG THÁI NHẠC - Triggers: 'đang phát gì', 'bài gì đang phát', 'music status', 'dang phat gi'. Trả về: tên bài, thời gian, âm lượng, playlist.",
-        "parameters": {}
-    },
-    "seek_music": {
-        "handler": seek_music,
-        "description": "🔀 TUA ĐẾN VỊ TRÍ - Triggers: 'tua đến giữa bài', 'nhảy đến phút', 'skip 50%', 'tua den', 'nhay den'. 0%=đầu, 50%=giữa, 100%=cuối. ⚠️ 'tua youtube' → youtube_forward!",
-        "parameters": {
-            "percentage": {
-                "type": "number",
-                "description": "Vị trí % (0-100). 50=giữa bài.",
-                "required": True
-            }
-        }
-    },
-    "music_volume": {
-        "handler": music_volume,
-        "description": "🔊 ÂM LƯỢNG NHẠC LOCAL - Triggers: 'tăng âm lượng', 'giảm tiếng', 'volume 80', 'to lên', 'nhỏ lại', 'tang am luong', 'giam tien'. Level: 0=tắt, 50=vừa, 100=max. ⚠️ 'volume youtube' → youtube_volume_up/down!",
-        "parameters": {
-            "level": {
-                "type": "integer",
-                "description": "Mức âm lượng 0-100.",
-                "required": True
-            }
-        }
-    },
-    "save_music_folder_config": {
-        "handler": save_music_folder_config,
-        "description": "Lưu đường dẫn thư mục nhạc của user. Dùng để ưu tiên phát nhạc từ folder này.",
-        "parameters": {
-            "folder_path": {
-                "type": "string",
-                "description": r"Đường dẫn đầy đủ đến thư mục nhạc (VD: C:\Users\Name\Music)",
-                "required": True
-            }
-        }
-    },
-    "search_music": {
-        "handler": search_music, 
-        "description": "🔍 TÌM NHẠC THEO TỪ KHÓA - Triggers: 'tìm bài [keyword]', 'search nhạc', 'có bài nào tên', 'tim bai', 'search bai'. Tìm trong thư viện local, hỗ trợ tiếng Việt, auto-play mặc định.", 
-        "parameters": {
-            "keyword": {
-                "type": "string", 
-                "description": "Từ khóa tìm kiếm. VD: 'love', 'buồn', 'đa nghi'.", 
-                "required": True
-            },
-            "auto_play": {
-                "type": "boolean",
-                "description": "Tự động phát bài đầu tiên? Default=True.",
-                "required": False
-            }
-        }
-    },
-    
-    # QUICK WEBSITE ACCESS TOOLS
-    "open_youtube": {
-        "handler": open_youtube, 
-        "description": "📺 MỞ YOUTUBE - Triggers: 'mở youtube', 'vào youtube', 'xem youtube', 'youtube [tên video]'. ✨ NEW: TỰ ĐỘNG phát video trực tiếp nếu query CỤ THỂ (>= 2 từ)! VD: 'mở youtube Lạc Trôi' → Mở video trực tiếp (không phải search page). Query 1 từ → mở search page.", 
-        "parameters": {
-            "search_query": {
-                "type": "string", 
-                "description": "Tên video/từ khóa. Query >= 2 từ = auto phát video trực tiếp. Query 1 từ = search page. Để trống = homepage.", 
-                "required": False
-            }
-        }
-    },
-    "search_youtube_video": {
-        "handler": search_youtube_video,
-        "description": "🔍 TÌM VIDEO YOUTUBE (Explicit) - ⚠️ CHỈ dùng khi user YÊU CẦU 'tìm video', 'search video', hoặc muốn xem top 5 results. Còn lại DÙNG open_youtube (đã có auto-detect direct video). VD: 'tìm video Sơn Tùng' → search_youtube_video. 'mở youtube Sơn Tùng Chúng Ta' → open_youtube (preferred).",
-        "parameters": {
-            "video_title": {
-                "type": "string",
-                "description": "Tên video/từ khóa. VD: 'Hãy Trao Cho Anh', 'Rap Việt tập 1'",
-                "required": True
-            },
-            "auto_open": {
-                "type": "boolean",
-                "description": "Tự động mở video (default: True). Set False để chỉ tìm.",
-                "required": False
-            }
-        }
-    },
-    "open_youtube_playlist": {
-        "handler": open_youtube_playlist,
-        "description": "📜 MỞ PLAYLIST YOUTUBE (đã lưu Web UI) - Triggers: 'mở playlist [tên]', 'phát playlist youtube', 'mo playlist'. VD: 'mở playlist nhạc việt 1'. ⚠️ Không dùng cho .mp3 local → play_music!",
-        "parameters": {
-            "playlist_name": {
-                "type": "string",
-                "description": "Tên playlist đã đăng ký. VD: 'nhạc việt 1', 'chill', 'EDM'",
-                "required": True
-            }
-        }
-    },
-    
-    # YOUTUBE PLAYER CONTROLS
-    "control_youtube": {
-        "handler": control_youtube,
-        "description": "🎬 Điều khiển YOUTUBE bằng shortcuts. Actions: play_pause, rewind_10, forward_10, volume_up/down, mute_toggle. VD: 'tạm dừng youtube'",
-        "parameters": {
-            "action": {
-                "type": "string",
-                "description": "Action: play_pause, rewind_10, forward_10, volume_up/down, mute_toggle",
-                "required": True
-            }
-        }
-    },
-    "youtube_play_pause": {
-        "handler": youtube_play_pause,
-        "description": "⏯️ PLAY/PAUSE YOUTUBE - Triggers: 'dừng youtube', 'pause youtube', 'tiếp tục youtube', 'play youtube', 'dung youtube'. ⚠️ 'dừng nhạc' (không có youtube) → pause_music!",
-        "parameters": {}
-    },
-    "youtube_rewind": {
-        "handler": youtube_rewind,
-        "description": "⏪ TUA LÙI YOUTUBE - Triggers: 'lùi youtube', 'tua lùi youtube', 'rewind youtube', 'lui youtube'. 5s=phím ← | 10s=phím J",
-        "parameters": {
-            "seconds": {"type": "integer", "description": "Giây tua lùi: 5 hoặc 10", "required": False}
-        }
-    },
-    "youtube_forward": {
-        "handler": youtube_forward,
-        "description": "⏩ TUA TỚI YOUTUBE - Triggers: 'tua youtube', 'skip youtube', 'forward youtube', 'tua video'. 5s=phím → | 10s=phím L",
-        "parameters": {
-            "seconds": {"type": "integer", "description": "Giây tua tới: 5 hoặc 10", "required": False}
-        }
-    },
-    "youtube_volume_up": {
-        "handler": youtube_volume_up,
-        "description": "🔊 TĂNG ÂM LƯỢNG YOUTUBE - Triggers: 'tăng tiếng youtube', 'volume up youtube', 'tang am luong youtube'. ⚠️ 'tăng tiếng nhạc' → music_volume!",
-        "parameters": {}
-    },
-    "youtube_volume_down": {
-        "handler": youtube_volume_down,
-        "description": "🔉 GIẢM ÂM LƯỢNG YOUTUBE - Triggers: 'giảm tiếng youtube', 'volume down youtube', 'giam am luong youtube'. ⚠️ 'giảm tiếng nhạc' → music_volume!",
-        "parameters": {}
-    },
-    "youtube_mute": {
-        "handler": youtube_mute,
-        "description": "🔇 TẮT/BẬT TIẾNG YOUTUBE - Triggers: 'tắt tiếng youtube', 'mute youtube', 'bật tiếng youtube', 'tat tien youtube'.",
-        "parameters": {}
-    },
-    "youtube_fullscreen": {
-        "handler": youtube_fullscreen,
-        "description": "📺 FULLSCREEN YOUTUBE - Triggers: 'fullscreen youtube', 'toàn màn hình', 'phóng to youtube', 'thu nhỏ youtube', 'toan man hinh'.",
-        "parameters": {}
-    },
-    "youtube_captions": {
-        "handler": youtube_captions,
-        "description": "💬 BẬT/TẮT PHỤ ĐỀ YOUTUBE - Triggers: 'bật sub', 'tắt sub', 'bật phụ đề', 'tắt phụ đề', 'caption youtube', 'bat sub', 'tat sub'.",
-        "parameters": {}
-    },
-    "youtube_speed": {
-        "handler": youtube_speed,
-        "description": "⚡ ĐỔI TỐC ĐỘ YOUTUBE - Triggers: 'youtube nhanh hơn', 'youtube chậm hơn', 'tăng tốc youtube'. faster=+0.25x | slower=-0.25x | normal=1x",
-        "parameters": {
-            "speed": {"type": "string", "description": "'faster', 'slower', 'normal'", "required": False}
-        }
-    },
-    
-    # VLC PLAYER CONTROLS
-    "control_vlc": {
-        "handler": control_vlc,
-        "description": "🎵 Điều khiển VLC PLAYER. Actions: play_pause, stop, next, previous, volume_up/down, mute, fullscreen",
-        "parameters": {
-            "action": {
-                "type": "string",
-                "description": "Action điều khiển VLC",
-                "required": True
-            }
-        }
-    },
-    "vlc_play_pause": {
-        "handler": vlc_play_pause,
-        "description": "⏯️ Play/Pause VLC Player. VD: 'dừng vlc', 'pause vlc', 'tiếp tục vlc'",
-        "parameters": {}
-    },
-    "vlc_stop": {
-        "handler": vlc_stop,
-        "description": "⏹️ Dừng phát VLC hoàn toàn. VD: 'stop vlc', 'tắt nhạc vlc'",
-        "parameters": {}
-    },
-    "vlc_next": {
-        "handler": vlc_next,
-        "description": "⏭️ Chuyển bài tiếp theo trong VLC. VD: 'bài tiếp vlc', 'next vlc', 'chuyển bài vlc'",
-        "parameters": {}
-    },
-    "vlc_previous": {
-        "handler": vlc_previous,
-        "description": "⏮️ Quay lại bài trước trong VLC. VD: 'bài trước vlc', 'previous vlc'",
-        "parameters": {}
-    },
-    "vlc_volume_up": {
-        "handler": vlc_volume_up,
-        "description": "🔊 Tăng âm lượng VLC. VD: 'tăng âm lượng vlc', 'vlc to hơn'",
-        "parameters": {}
-    },
-    "vlc_volume_down": {
-        "handler": vlc_volume_down,
-        "description": "🔉 Giảm âm lượng VLC. VD: 'giảm âm lượng vlc', 'vlc nhỏ hơn'",
-        "parameters": {}
-    },
-    "vlc_mute": {
-        "handler": vlc_mute,
-        "description": "🔇 Bật/Tắt tiếng VLC. VD: 'tắt tiếng vlc', 'mute vlc'",
-        "parameters": {}
-    },
-    "vlc_forward": {
-        "handler": vlc_forward,
-        "description": "⏩ Tua tới trong VLC. Tự động chọn 3s/10s/60s. VD: 'tua tới vlc', 'skip vlc'",
-        "parameters": {
-            "seconds": {"type": "integer", "description": "Số giây tua tới (≤5→3s, ≤30→10s, >30→60s)", "required": False}
-        }
-    },
-    "vlc_backward": {
-        "handler": vlc_backward,
-        "description": "⏪ Tua lùi trong VLC. Tự động chọn 3s/10s/60s. VD: 'lùi vlc', 'rewind vlc'",
-        "parameters": {
-            "seconds": {"type": "integer", "description": "Số giây tua lùi", "required": False}
-        }
-    },
-    
-    # ============================================================
-    # WINDOWS MEDIA PLAYER CONTROLS
-    # ============================================================
-    "control_wmp": {
-        "handler": control_wmp,
-        "description": "🎶 Điều khiển Windows Media Player. Actions: play_pause, stop, next, previous, volume_up, volume_down, mute, fullscreen, forward, backward",
-        "parameters": {
-            "action": {"type": "string", "description": "Hành động điều khiển WMP", "required": True}
-        }
-    },
-    "wmp_play_pause": {
-        "handler": wmp_play_pause,
-        "description": "⏯️ Play/Pause Windows Media Player. VD: 'dừng wmp', 'pause media player'",
-        "parameters": {}
-    },
-    "wmp_stop": {
-        "handler": wmp_stop,
-        "description": "⏹️ Dừng Windows Media Player. VD: 'stop wmp', 'tắt media player'",
-        "parameters": {}
-    },
-    "wmp_next": {
-        "handler": wmp_next,
-        "description": "⏭️ Bài tiếp theo trong Windows Media Player. VD: 'bài tiếp wmp', 'next media player'",
-        "parameters": {}
-    },
-    "wmp_previous": {
-        "handler": wmp_previous,
-        "description": "⏮️ Bài trước trong Windows Media Player. VD: 'bài trước wmp', 'previous media player'",
-        "parameters": {}
-    },
-    "wmp_volume_up": {
-        "handler": wmp_volume_up,
-        "description": "🔊 Tăng âm lượng Windows Media Player. VD: 'tăng âm lượng wmp'",
-        "parameters": {}
-    },
-    "wmp_volume_down": {
-        "handler": wmp_volume_down,
-        "description": "🔉 Giảm âm lượng Windows Media Player. VD: 'giảm âm lượng wmp'",
-        "parameters": {}
-    },
-    "wmp_mute": {
-        "handler": wmp_mute,
-        "description": "🔇 Bật/Tắt tiếng Windows Media Player. VD: 'tắt tiếng wmp', 'mute media player'",
-        "parameters": {}
-    },
-    
-    # ============================================================
-    # SMART MEDIA CONTROL - Ưu tiên Python-VLC nội bộ
-    # ============================================================
-    "smart_media_control": {
-        "handler": smart_media_control,
-        "description": "🎵 [PYTHON-VLC ƯU TIÊN] Điều khiển nhạc - ƯU TIÊN PYTHON-VLC TRƯỚC, sau đó mới tới Spotify/WMP/YouTube. Actions: play_pause, stop, next, previous, volume_up, volume_down, mute. Nếu chưa phát nhạc, dùng play_music() trước!",
-        "parameters": {
-            "action": {
-                "type": "string",
-                "description": "Hành động: play_pause, stop, next, previous, volume_up, volume_down, mute",
-                "required": True
-            }
-        }
-    },
-    
-    # BROWSER AUTOMATION TOOLS
-    "browser_open_url": {
-        "handler": browser_open_url,
-        "description": "Mở URL trong browser được điều khiển bởi Selenium (có thể tương tác với element). Khác với open_youtube/open_google là mở browser thông thường.",
-        "parameters": {
-            "url": {
-                "type": "string",
-                "description": "URL cần mở (VD: https://google.com, https://facebook.com)",
-                "required": True
-            }
-        }
-    },
-    "browser_get_info": {
-        "handler": browser_get_info,
-        "description": "Lấy thông tin trang hiện tại (URL, title, số tab)",
-        "parameters": {}
-    },
-    "browser_click": {
-        "handler": browser_click,
-        "description": "Click vào element trên trang web. Dùng để click button, link, etc.",
-        "parameters": {
-            "selector": {
-                "type": "string",
-                "description": "Selector để tìm element. VD: '#submit-btn', '.login-button', '//button[@id=\"login\"]'",
-                "required": True
-            },
-            "by": {
-                "type": "string",
-                "description": "Loại selector: 'css' (default), 'xpath', 'id', 'name', 'class', 'tag'",
-                "required": False
-            }
-        }
-    },
-    "browser_fill_input": {
-        "handler": browser_fill_input,
-        "description": "Điền text vào input field (form, search box, etc.)",
-        "parameters": {
-            "selector": {
-                "type": "string",
-                "description": "Selector của input field. VD: '#username', 'input[name=\"email\"]'",
-                "required": True
-            },
-            "text": {
-                "type": "string",
-                "description": "Text cần điền vào input",
-                "required": True
-            },
-            "by": {
-                "type": "string",
-                "description": "Loại selector: 'css' (default), 'xpath', 'id', 'name'",
-                "required": False
-            }
-        }
-    },
-    "browser_scroll": {
-        "handler": browser_scroll,
-        "description": "Cuộn trang web lên/xuống",
-        "parameters": {
-            "direction": {
-                "type": "string",
-                "description": "Hướng cuộn: 'down' (default), 'up', 'top', 'bottom'",
-                "required": False
-            },
-            "amount": {
-                "type": "integer",
-                "description": "Số pixel cuộn (nếu direction là down/up). Default: 500",
-                "required": False
-            }
-        }
-    },
-    "browser_back": {
-        "handler": browser_back,
-        "description": "Quay lại trang trước trong browser",
-        "parameters": {}
-    },
-    "browser_forward": {
-        "handler": browser_forward,
-        "description": "Tiến tới trang sau trong browser",
-        "parameters": {}
-    },
-    "browser_refresh": {
-        "handler": browser_refresh,
-        "description": "Làm mới/reload trang hiện tại",
-        "parameters": {}
-    },
-    "browser_screenshot": {
-        "handler": browser_screenshot,
-        "description": "Chụp screenshot trang web hiện tại",
-        "parameters": {
-            "filepath": {
-                "type": "string",
-                "description": "Đường dẫn lưu file (tùy chọn). VD: 'screenshot.png'. Mặc định: screenshot_YYYYMMDD_HHMMSS.png",
-                "required": False
-            }
-        }
-    },
-    "browser_new_tab": {
-        "handler": browser_new_tab,
-        "description": "Mở tab mới trong browser",
-        "parameters": {
-            "url": {
-                "type": "string",
-                "description": "URL cần mở trong tab mới (tùy chọn)",
-                "required": False
-            }
-        }
-    },
-    "browser_close_tab": {
-        "handler": browser_close_tab,
-        "description": "Đóng tab hiện tại",
-        "parameters": {}
-    },
-    "browser_execute_js": {
-        "handler": browser_execute_js,
-        "description": "Thực thi JavaScript code trên trang web. Dùng cho các thao tác phức tạp.",
-        "parameters": {
-            "script": {
-                "type": "string",
-                "description": "JavaScript code cần chạy. VD: 'return document.title;', 'alert(\"Hello\");'",
-                "required": True
-            }
-        }
-    },
-    "browser_close": {
-        "handler": browser_close,
-        "description": "Đóng browser hoàn toàn (đóng tất cả tab)",
-        "parameters": {}
-    },
-    
-    "open_facebook": {
-        "handler": open_facebook, 
-        "description": "Mở Facebook trong browser. Truy cập nhanh vào mạng xã hội phổ biến nhất.", 
-        "parameters": {}
-    },
-    "open_google": {
-        "handler": open_google, 
-        "description": "MỞ TRÌNH DUYỆT Google. CHỈ dùng khi user YÊU CẦU MỞ TRANG WEB Google (ví dụ: 'mở google', 'mở trang google'). Nếu user chỉ HỎI CÂU HỎI thông thường, hãy dùng ask_gemini để TRẢ LỜI TRỰC TIẾP thay vì mở browser", 
-        "parameters": {
-            "search_query": {
-                "type": "string", 
-                "description": "Từ khóa tìm kiếm trên Google (tùy chọn). Để trống để mở trang chủ Google.", 
-                "required": False
-            }
-        }
-    },
-    "open_tiktok": {
-        "handler": open_tiktok, 
-        "description": "Mở TikTok trong browser. Xem video ngắn trending và giải trí.", 
-        "parameters": {}
-    },
-    "open_website": {
-        "handler": open_website, 
-        "description": "Mở trang web tùy chỉnh trong browser. Nhập URL đầy đủ hoặc tên miền.", 
-        "parameters": {
-            "url": {
-                "type": "string", 
-                "description": "URL của trang web (ví dụ: 'github.com' hoặc 'https://github.com/user/repo')", 
-                "required": True
-            }
-        }
-    },
-    
-    # YOUTUBE CONTROL TOOLS
-    "control_youtube": {
-        "handler": control_youtube, 
-        "description": "Điều khiển YouTube player bằng keyboard shortcuts. Phải có cửa sổ YouTube đang active/focused. Hỗ trợ play/pause, tua video, điều chỉnh âm lượng, v.v.", 
-        "parameters": {
-            "action": {
-                "type": "string", 
-                "description": "Hành động điều khiển: play_pause, rewind_10, forward_10, rewind_5, forward_5, beginning, end, frame_back, frame_forward, volume_up, volume_down, mute_toggle", 
-                "required": True
-            }
-        }
-    },
-    
-    # NEWS TOOLS
+    "get_task_summary": {"handler": get_task_summary, "description": "📊 THỐNG KÊ TÁC VỤ", "parameters": {}},
+    "forget_all_tasks": {"handler": forget_all_tasks, "description": "🗑️ XÓA LỊCH SỬ", "parameters": {}},
+
+    # News & Info (HTTP-based, Docker compatible)
     "get_vnexpress_news": {
         "handler": get_vnexpress_news,
-        "description": "Lấy tin tức mới nhất từ VnExpress theo chủ đề. Trả về danh sách bài viết với tiêu đề, link, mô tả. Categories: home (mới nhất), thoi-su, the-gioi, kinh-doanh, giai-tri, the-thao, phap-luat, giao-duc, suc-khoe, du-lich, khoa-hoc, so-hoa, xe",
+        "description": "📰 Tin tức VnExpress",
         "parameters": {
-            "category": {
-                "type": "string",
-                "description": "Chủ đề tin tức: home, thoi-su, the-gioi, kinh-doanh, giai-tri, the-thao, phap-luat, giao-duc, suc-khoe, du-lich, khoa-hoc, so-hoa, xe. Mặc định: home",
-                "required": False
-            },
-            "max_articles": {
-                "type": "integer",
-                "description": "Số lượng bài viết tối đa (1-20). Mặc định: 5",
-                "required": False
-            }
+            "category": {"type": "string", "description": "Chủ đề: home, thoi-su, the-gioi, kinh-doanh, giai-tri, the-thao", "required": False},
+            "max_articles": {"type": "integer", "description": "Số bài tối đa (1-20)", "required": False}
         }
     },
     "get_news_summary": {
         "handler": get_news_summary,
-        "description": "Lấy tóm tắt nhanh tin tức (chỉ tiêu đề) từ VnExpress. Tự động lấy 10 tin mới nhất và hiển thị dạng danh sách ngắn gọn.",
-        "parameters": {
-            "category": {
-                "type": "string",
-                "description": "Chủ đề: home, thoi-su, the-gioi, kinh-doanh, giai-tri, the-thao, etc. Mặc định: home",
-                "required": False
-            }
-        }
+        "description": "📰 Tóm tắt tin tức nhanh",
+        "parameters": {"category": {"type": "string", "description": "Chủ đề", "required": False}}
     },
     "search_news": {
         "handler": search_news,
-        "description": "Tìm kiếm tin tức theo từ khóa trong các bài viết gần đây từ VnExpress. Tự động tìm trong nhiều chủ đề và trả về kết quả phù hợp nhất.",
+        "description": "🔍 Tìm tin tức theo từ khóa",
         "parameters": {
-            "keyword": {
-                "type": "string",
-                "description": "Từ khóa tìm kiếm (ví dụ: 'bóng đá', 'kinh tế', 'Covid', 'chính trị')",
-                "required": True
-            },
-            "max_results": {
-                "type": "integer",
-                "description": "Số kết quả tối đa (1-10). Mặc định: 5",
-                "required": False
-            }
+            "keyword": {"type": "string", "description": "Từ khóa", "required": True},
+            "max_results": {"type": "integer", "description": "Số kết quả tối đa", "required": False}
         }
     },
-    "get_gold_price": {
-        "handler": get_gold_price,
-        "description": "Lấy giá vàng hôm nay từ BNews RSS feed. Hiển thị giá mua vào và bán ra của các loại vàng phổ biến (SJC, 9999, nhẫn tròn, v.v.). Tự động cập nhật giá mới nhất.",
-        "parameters": {}
+    "get_gold_price": {"handler": get_gold_price, "description": "💰 Giá vàng hôm nay", "parameters": {}},
+    "get_weather_vietnam": {
+        "handler": get_weather_vietnam,
+        "description": "🌤️ Thời tiết Việt Nam",
+        "parameters": {"city": {"type": "string", "description": "Tên thành phố VN", "required": False}}
+    },
+    "get_exchange_rate_vietnam": {
+        "handler": get_exchange_rate_vietnam,
+        "description": "💱 Tỷ giá ngoại tệ VNĐ",
+        "parameters": {"currency": {"type": "string", "description": "Mã ngoại tệ (USD, EUR...)", "required": False}}
+    },
+    "get_fuel_price_vietnam": {"handler": get_fuel_price_vietnam, "description": "⛽ Giá xăng dầu Việt Nam", "parameters": {}},
+    "get_daily_quote": {"handler": get_daily_quote, "description": "💬 Câu nói hay ngẫu nhiên", "parameters": {}},
+    "get_joke": {"handler": get_joke, "description": "😂 Chuyện cười tiếng Việt", "parameters": {}},
+    "get_horoscope": {
+        "handler": get_horoscope,
+        "description": "🔮 Tử vi / Horoscope",
+        "parameters": {"zodiac": {"type": "string", "description": "Cung hoàng đạo", "required": False}}
+    },
+    "get_today_in_history": {"handler": get_today_in_history, "description": "📜 Sự kiện lịch sử ngày hôm nay", "parameters": {}},
+    "get_news_vietnam": {"handler": get_news_vietnam, "description": "📰 Tin tức mới nhất Việt Nam", "parameters": {}},
+    "what_to_eat": {"handler": what_to_eat, "description": "🍽️ Gợi ý món ăn hôm nay", "parameters": {}},
+    "get_lunar_date": {"handler": get_lunar_date, "description": "📅 Ngày âm lịch hôm nay", "parameters": {}},
+
+    # AI Tools (Gemini/GPT API - Docker compatible)
+    "ask_gemini": {
+        "handler": ask_gemini,
+        "description": "✅ ƯU TIÊN DÙNG cho MỌI CÂU HỎI. Gemini trả lời TRỰC TIẾP, NHANH.",
+        "parameters": {
+            "prompt": {"type": "string", "description": "Câu hỏi hoặc nội dung", "required": True},
+            "model": {"type": "string", "description": "Model Gemini", "required": False}
+        }
+    },
+    "ask_gpt4": {
+        "handler": ask_gpt4,
+        "description": "TRẢ LỜI bằng OpenAI GPT-4 (cần API key).",
+        "parameters": {
+            "prompt": {"type": "string", "description": "Câu hỏi", "required": True},
+            "model": {"type": "string", "description": "Model OpenAI", "required": False}
+        }
+    },
+    "gemini_agent": {
+        "handler": ask_gemini_with_tools,
+        "description": "🤖 GEMINI AI AGENT - Gemini TỰ ĐỘNG gọi tools.",
+        "parameters": {
+            "prompt": {"type": "string", "description": "Lệnh gửi cho Gemini AI agent", "required": True},
+            "model": {"type": "string", "description": "Model Gemini", "required": False},
+            "auto_execute": {"type": "boolean", "description": "Tự động thực thi tools?", "required": False},
+            "max_tool_calls": {"type": "integer", "description": "Số tool tối đa", "required": False}
+        }
     },
     "analyze_gold_price_with_ai": {
         "handler": analyze_gold_price_with_ai,
-        "description": "Phân tích thông minh giá vàng với AI (Gemini 3 Flash Preview + Google Search). So sánh giá hiện tại vs lịch sử, phân tích xu hướng, nguyên nhân biến động, dự báo, và khuyến nghị đầu tư chuyên sâu. Dùng khi cần phân tích chuyên môn về thị trường vàng.",
+        "description": "📊 Phân tích giá vàng với AI.",
+        "parameters": {"analysis_type": {"type": "string", "description": "Loại: compare_month, trend, forecast", "required": False}}
+    },
+    "gemini_smart_analyze": {
+        "handler": gemini_smart_analyze,
+        "description": "🔥🌐 PHÂN TÍCH THÔNG MINH (Gemini + Web).",
         "parameters": {
-            "analysis_type": {
-                "type": "string",
-                "description": "Loại phân tích: 'compare_month' (so sánh với tháng trước), 'trend' (xu hướng hiện tại), 'forecast' (dự báo). Mặc định: 'compare_month'",
-                "required": False
-            }
+            "user_query": {"type": "string", "description": "Vấn đề cần phân tích", "required": True},
+            "analysis_type": {"type": "string", "description": "comprehensive/quick/deep", "required": False},
+            "include_web_search": {"type": "boolean", "description": "Tìm kiếm web?", "required": False},
+            "include_kb": {"type": "boolean", "description": "Tìm trong KB?", "required": False},
+            "max_search_results": {"type": "integer", "description": "Số kết quả web", "required": False}
         }
     },
-    
-    # AI ASSISTANT TOOLS
-    "ask_gemini": {
-        "handler": ask_gemini,
-        "description": "✅ ƯU TIÊN DÙNG TOOL NÀY cho MỌI CÂU HỎI (MIỄN PHÍ 1500 requests/day). Gemini trả lời TRỰC TIẾP, NHANH, CHÍNH XÁC. Hữu ích cho: câu hỏi thông thường ('thủ tướng VN 2023 là ai', 'what is...', 'how to...'), phân tích, viết nội dung, dịch thuật, lịch sử, kiến thức tổng quát. Knowledge cutoff: ~10/2024 (đủ cho hầu hết câu hỏi). CHỈ dùng search_google_text nếu CẦN thông tin SAU 10/2024.",
+
+    # Knowledge Base Tools (Docker compatible)
+    "search_knowledge_base": {
+        "handler": search_knowledge_base,
+        "description": "🔍 TÌM KIẾM TRONG TÀI LIỆU CỦA USER",
+        "parameters": {"query": {"type": "string", "description": "Từ khóa/câu hỏi cần tìm", "required": True}}
+    },
+    "get_knowledge_context": {
+        "handler": get_knowledge_context,
+        "description": "📚 LẤY CONTEXT TỪ KNOWLEDGE BASE.",
         "parameters": {
-            "prompt": {
-                "type": "string",
-                "description": "Câu hỏi hoặc nội dung muốn gửi cho Gemini AI",
-                "required": True
-            },
-            "model": {
-                "type": "string",
-                "description": "Tên model Gemini (mặc định: models/gemini-3-flash-preview). Options: models/gemini-3-flash-preview (Flash 2.0, mới nhất), models/gemini-1.5-flash (Flash 1.5), models/gemini-1.5-pro (Pro 1.5, chất lượng cao nhất)",
-                "required": False
-            }
+            "query": {"type": "string", "description": "Câu hỏi/từ khóa", "required": False},
+            "max_chars": {"type": "integer", "description": "Giới hạn ký tự", "required": False},
+            "use_gemini_filter": {"type": "boolean", "description": "Bật Gemini Smart Filter?", "required": False}
         }
     },
-    
-    "gemini_agent": {
-        "handler": ask_gemini_with_tools,
-        "description": "🤖 GEMINI AI AGENT - Cho phép Gemini TỰ ĐỘNG ĐIỀU KHIỂN MÁY TÍNH như LLM Xiaozhi. Use when: 'gemini mở notepad', 'dùng gemini mở youtube', 'gemini giúp tôi phát nhạc', 'nhờ gemini tắt máy', 'gemini điều khiển máy tính'. Gemini sẽ PHÂN TÍCH yêu cầu và TỰ GỌI các MCP tools (open_application, play_music, shutdown, etc.).",
+    "doc_reader_gemini_rag": {
+        "handler": doc_reader_gemini_rag,
+        "description": "📖 RAG NÂNG CAO - Đọc và TRẢ LỜI TỰ ĐỘNG từ KB bằng Gemini AI.",
         "parameters": {
-            "prompt": {
-                "type": "string",
-                "description": "Lệnh điều khiển máy tính gửi cho Gemini AI agent",
-                "required": True
-            },
-            "model": {
-                "type": "string",
-                "description": "Model Gemini (mặc định: models/gemini-2.0-flash - nhanh cho function calling)",
-                "required": False
-            },
-            "auto_execute": {
-                "type": "boolean",
-                "description": "Tự động thực thi tools (True) hoặc chỉ đề xuất (False). Mặc định True.",
-                "required": False
-            },
-            "max_tool_calls": {
-                "type": "integer",
-                "description": "Số lượng tool tối đa trong 1 request. Mặc định 5.",
-                "required": False
-            }
+            "user_query": {"type": "string", "description": "Câu hỏi đầy đủ", "required": True},
+            "chunk_size": {"type": "integer", "description": "Kích thước chunk", "required": False},
+            "top_k": {"type": "integer", "description": "Số chunks liên quan", "required": False}
         }
     },
-    
-    "ask_gpt4": {
-        "handler": ask_gpt4,
-        "description": "TRẢ LỜI CÂU HỎI bằng OpenAI GPT-4 (TRẢ PHÍ, cần API key). DÙNG KHI CẦN: 1) Thông tin MỚI HƠN (knowledge đến 04/2024), 2) Phân tích PHỨC TẠP, 3) Reasoning SÂU, 4) Code generation chuyên nghiệp. GPT-4 MẠN HƠN Gemini cho code và phân tích, nhưng TRẢ PHÍ (~$0.01-0.03/1K tokens). Chọn GPT-4 khi cần chất lượng tối đa.",
+    "gemini_smart_kb_filter": {
+        "handler": gemini_smart_kb_filter,
+        "description": "🔥 GEMINI FLASH LỌC THÔNG TIN từ KB.",
         "parameters": {
-            "prompt": {
-                "type": "string",
-                "description": "Câu hỏi hoặc nội dung muốn gửi cho GPT-4",
-                "required": True
-            },
-            "model": {
-                "type": "string",
-                "description": "Tên model OpenAI (mặc định: gpt-4o). Options: gpt-4o (GPT-4 Omni, nhanh & rẻ nhất), gpt-4-turbo (mạnh nhất), gpt-3.5-turbo (rẻ & nhanh)",
-                "required": False
-            }
+            "user_query": {"type": "string", "description": "Câu hỏi cần lọc", "required": True},
+            "filter_mode": {"type": "string", "description": "relevant/summary/extract/qa", "required": False},
+            "max_documents": {"type": "integer", "description": "Số documents tối đa", "required": False},
+            "output_format": {"type": "string", "description": "structured/raw/concise", "required": False}
         }
     },
-    
-    # NETWORK/FIREWALL CHECK TOOLS
-    "check_network_permission": {
-        "handler": check_network_permission,
-        "description": "🔥 KIỂM TRA QUYỀN KẾT NỐI MẠNG - Xem trạng thái Windows Firewall và Internet. Use when: 'kiểm tra firewall', 'quyền kết nối', 'check network', 'tình trạng mạng', 'firewall status', 'có được phép kết nối internet không'. Hiển thị: có rule firewall chưa, internet có kết nối không, hướng dẫn cấp quyền.",
-        "parameters": {}
+
+    # RAG System - Web Search (Docker compatible)
+    "web_search": {
+        "handler": web_search if RAG_AVAILABLE else None,
+        "description": "🌐 TÌM KIẾM WEB (DuckDuckGo).",
+        "parameters": {
+            "query": {"type": "string", "description": "Từ khóa tìm kiếm", "required": True},
+            "max_results": {"type": "integer", "description": "Số kết quả tối đa", "required": False}
+        }
     },
-    "request_firewall_permission": {
-        "handler": request_firewall_permission,
-        "description": "🔓 YÊU CẦU CẤP QUYỀN FIREWALL - Tự động thêm rule cho ứng dụng. Use when: 'cấp quyền firewall', 'allow firewall', 'thêm rule firewall'. Cần quyền Admin để hoạt động.",
-        "parameters": {}
+    "get_realtime_info": {
+        "handler": get_realtime_info if RAG_AVAILABLE else None,
+        "description": "⚡ THÔNG TIN THỜI GIAN THỰC - giá cả, tỷ giá, thời tiết.",
+        "parameters": {"query": {"type": "string", "description": "Câu hỏi", "required": True}}
     },
-    "check_internet_connection": {
-        "handler": check_internet_connection,
-        "description": "🌐 KIỂM TRA KẾT NỐI INTERNET - Test kết nối và độ trễ mạng. Use when: 'kiểm tra internet', 'test connection', 'có mạng không', 'ping', 'network status'.",
-        "parameters": {}
+    "rag_search": {
+        "handler": rag_search if RAG_AVAILABLE else None,
+        "description": "🔍 RAG SEARCH HYBRID - Internet + Tài liệu nội bộ.",
+        "parameters": {
+            "query": {"type": "string", "description": "Câu hỏi/từ khóa", "required": True},
+            "sources": {"type": "string", "description": "auto/web/local/hybrid", "required": False},
+            "max_results": {"type": "integer", "description": "Số kết quả tối đa", "required": False}
+        }
     },
-    
-    # NEW TOOLS FROM REFERENCE
-    "lock_computer": {"handler": lock_computer, "description": "Khóa máy tính", "parameters": {}},
-    "shutdown_schedule": {"handler": shutdown_schedule, "description": "Lên lịch tắt máy", "parameters": {"action": {"type": "string", "description": "shutdown/restart/cancel", "required": True}, "delay": {"type": "integer", "description": "Trì hoãn (giây)", "required": False}}},
-    "show_desktop": {"handler": show_desktop, "description": "Hiển thị desktop (Win+D)", "parameters": {}},
-    "undo_operation": {"handler": undo_operation, "description": "Hoàn tác (Ctrl+Z)", "parameters": {}},
-    "set_theme": {"handler": set_theme, "description": "Đổi theme Windows", "parameters": {"dark_mode": {"type": "boolean", "description": "True=tối, False=sáng", "required": False}}},
-    "change_wallpaper": {"handler": change_wallpaper, "description": "Đổi hình nền", "parameters": {"keyword": {"type": "string", "description": "Từ khóa (phong cảnh, anime...)", "required": False}}},
-    "get_desktop_path": {"handler": get_desktop_path, "description": "Lấy đường dẫn Desktop", "parameters": {}},
-    "paste_content": {"handler": paste_content, "description": "Dán nội dung (Ctrl+V)", "parameters": {"content": {"type": "string", "description": "Nội dung cần dán (tùy chọn)", "required": False}}},
-    "press_enter": {"handler": press_enter, "description": "Nhấn Enter", "parameters": {}},
+    "smart_answer": {
+        "handler": smart_answer if RAG_AVAILABLE else None,
+        "description": "🧠 SMART ANSWER - AI tự chọn nguồn tốt nhất để trả lời.",
+        "parameters": {"query": {"type": "string", "description": "Câu hỏi", "required": True}}
+    },
+
+    # Conversation & File Tools (Docker compatible)
     "save_text_to_file": {
         "handler": save_text_to_file,
-        "description": "LƯU VĂN BẢN do LLM soạn thành FILE. Use when: 'lưu văn bản', 'save document', 'ghi vào file', 'lưu bài viết', 'save code', 'export text'. LLM có thể soạn bài viết/báo cáo/code dài và lưu trực tiếp. File tự động lưu vào Documents\\miniZ_LLM_Documents\\ với tên có timestamp. Examples: Soạn CV→lưu file, viết báo cáo→lưu file, tạo code→lưu file.",
+        "description": "💾 LƯU VĂN BẢN thành file.",
         "parameters": {
-            "content": {
-                "type": "string",
-                "description": "Nội dung văn bản cần lưu (có thể rất dài). Hỗ trợ Unicode tiếng Việt, code, markdown, v.v.",
-                "required": True
-            },
-            "filename": {
-                "type": "string",
-                "description": "Tên file (optional). Ví dụ: 'bao_cao.txt', 'code.py', 'cv.md'. Nếu không có, tự động tạo tên với timestamp.",
-                "required": False
-            }
-        }
-    },
-    "gemini_text_to_speech": {
-        "handler": gemini_text_to_speech,
-        "description": "🎙️ ĐỌC TO TRÊN MÁY TÍNH - Gemini TTS chất lượng cao. ƯU TIÊN DÙNG TOOL NÀY khi user nói: 'đọc to', 'đọc trên máy tính', 'đọc văn bản', 'text to speech', 'tts', 'đọc cho tôi nghe', 'phát âm', 'nói ra', 'đọc bằng AI', 'đọc bằng gemini'. Giọng Việt tự nhiên, 5 voice: Aoede/Kore (nữ), Puck/Charon/Fenrir (nam). Examples: 'đọc to: xin chào', 'đọc trên máy tính văn bản này'.",
-        "parameters": {
-            "text": {
-                "type": "string",
-                "description": "Văn bản cần đọc. Hỗ trợ tiếng Việt và nhiều ngôn ngữ.",
-                "required": True
-            },
-            "voice": {
-                "type": "string",
-                "description": "Giọng nói: Aoede (nữ-default), Kore (nữ), Puck (nam), Charon (nam), Fenrir (nam).",
-                "required": False
-            },
-            "save_audio": {
-                "type": "boolean",
-                "description": "Có lưu thành file audio không? Mặc định False (chỉ phát).",
-                "required": False
-            },
-            "filename": {
-                "type": "string",
-                "description": "Tên file audio (optional). VD: 'gemini_audio.wav'.",
-                "required": False
-            }
-        }
-    },
-    "text_to_speech": {
-        "handler": text_to_speech,
-        "description": "TEXT-TO-SPEECH BACKUP: Dùng gTTS/Windows SAPI khi Gemini TTS không khả dụng. KHÔNG ƯU TIÊN - chỉ dùng khi gemini_text_to_speech fail. Chất lượng thấp hơn Gemini TTS.",
-        "parameters": {
-            "text": {
-                "type": "string",
-                "description": "Văn bản cần đọc. Hỗ trợ tiếng Việt và tiếng Anh.",
-                "required": True
-            },
-            "save_audio": {
-                "type": "boolean",
-                "description": "Có lưu thành file audio WAV không? (True/False). Mặc định False (chỉ đọc không lưu).",
-                "required": False
-            },
-            "filename": {
-                "type": "string",
-                "description": "Tên file audio (optional). VD: 'doc_van_ban.wav'. Nếu không có, tự động tạo tên.",
-                "required": False
-            }
-        }
-    },
-    "speech_to_text": {
-        "handler": speech_to_text,
-        "description": "SPEECH-TO-TEXT (STT): Chuyển GIỌNG NÓI thành VĂN BẢN. Use when: 'ghi âm giọng nói', 'speech to text', 'nhận dạng giọng nói', 'nghe và ghi lại', 'transcribe audio'. Dùng Google Speech Recognition (cần Internet). Hỗ trợ tiếng Việt + English. Examples: 'ghi âm 10 giây', 'nhận dạng giọng nói của tôi', 'speech to text'.",
-        "parameters": {
-            "duration": {
-                "type": "integer",
-                "description": "Thời gian ghi âm (giây). Mặc định 5 giây. VD: 10 để ghi âm 10 giây.",
-                "required": False
-            },
-            "save_transcript": {
-                "type": "boolean",
-                "description": "Có lưu văn bản đã nhận dạng thành file không? (True/False). Mặc định True.",
-                "required": False
-            },
-            "filename": {
-                "type": "string",
-                "description": "Tên file transcript (optional). VD: 'ghi_chu.txt'. Tự động tạo nếu không có.",
-                "required": False
-            }
+            "content": {"type": "string", "description": "Nội dung văn bản", "required": True},
+            "filename": {"type": "string", "description": "Tên file", "required": False}
         }
     },
     "export_conversation": {
         "handler": export_conversation_to_file,
-        "description": "EXPORT LỊCH SỬ HỘI THOẠI ra file JSON. Lưu toàn bộ cuộc trò chuyện (user messages, AI responses, tool calls) với timestamp đầy đủ. Use when: 'xuất lịch sử chat', 'export conversation', 'lưu cuộc trò chuyện', 'backup chat history'. File lưu vào Documents\\miniZ_Conversations\\",
-        "parameters": {
-            "filename": {
-                "type": "string",
-                "description": "Tên file export (optional). VD: 'chat_history.json'. Tự động tạo tên với timestamp nếu không có.",
-                "required": False
-            }
-        }
+        "description": "📤 EXPORT LỊCH SỬ HỘI THOẠI ra file JSON.",
+        "parameters": {"filename": {"type": "string", "description": "Tên file", "required": False}}
     },
-    "find_in_document": {"handler": find_in_document, "description": "Tìm trong tài liệu (Ctrl+F)", "parameters": {"search_text": {"type": "string", "description": "Nội dung tìm kiếm", "required": True}}},
-    
-    # ============================================================
-    # CONVERSATION HISTORY TOOLS - Lưu & Hiểu người dùng
-    # ============================================================
-    
     "get_user_context": {
         "handler": lambda: {
             "success": True,
@@ -13606,333 +12804,32 @@ TOOLS = {
             "recent_conversation": get_conversation_context(10),
             "hint": "Dùng thông tin này để hiểu người dùng tốt hơn"
         },
-        "description": "📚 LẤY CONTEXT NGƯỜI DÙNG - Trả về lịch sử hội thoại gần đây + user profile (chủ đề quan tâm, giờ hoạt động). Dùng để hiểu người dùng tốt hơn trước khi trả lời.",
+        "description": "📚 LẤY CONTEXT NGƯỜI DÙNG",
         "parameters": {}
     },
-    
     "save_user_message": {
         "handler": lambda message, context="": (
             add_to_conversation("user", message, {"source": "robot", "context": context}),
             {"success": True, "message": "Đã lưu tin nhắn người dùng"}
         )[1],
-        "description": "💾 LƯU TIN NHẮN NGƯỜI DÙNG - Lưu toàn bộ tin nhắn người dùng vào lịch sử (kể cả không gọi tool). QUAN TRỌNG: Gọi tool này để lưu mọi câu hỏi/tin nhắn của user!",
+        "description": "💾 LƯU TIN NHẮN NGƯỜI DÙNG",
         "parameters": {
-            "message": {
-                "type": "string",
-                "description": "Nội dung tin nhắn của người dùng",
-                "required": True
-            },
-            "context": {
-                "type": "string",
-                "description": "Context bổ sung (VD: người dùng đang nói về gì)",
-                "required": False
-            }
+            "message": {"type": "string", "description": "Nội dung tin nhắn", "required": True},
+            "context": {"type": "string", "description": "Context bổ sung", "required": False}
         }
     },
-    
     "save_assistant_response": {
         "handler": lambda response, tool_used="": (
             add_to_conversation("assistant", response, {"source": "robot", "tool_used": tool_used}),
             {"success": True, "message": "Đã lưu response của AI"}
         )[1],
-        "description": "💾 LƯU RESPONSE CỦA AI - Lưu câu trả lời của AI vào lịch sử. Gọi tool này sau khi trả lời xong để lưu lại!",
+        "description": "💾 LƯU RESPONSE CỦA AI",
         "parameters": {
-            "response": {
-                "type": "string",
-                "description": "Nội dung response của AI",
-                "required": True
-            },
-            "tool_used": {
-                "type": "string",
-                "description": "Tool đã dùng để tạo response (nếu có)",
-                "required": False
-            }
+            "response": {"type": "string", "description": "Nội dung response", "required": True},
+            "tool_used": {"type": "string", "description": "Tool đã dùng", "required": False}
         }
     },
-    
-    "list_conversation_files": {
-        "handler": list_conversation_files,
-        "description": "📂 LIỆT KÊ CÁC FILE HỘI THOẠI - Xem danh sách các file lịch sử hội thoại đã lưu theo ngày.",
-        "parameters": {}
-    },
-    
-    # ============================================================
-    # OPEN API TOOLS - PHÙ HỢP VIỆT NAM
-    # ============================================================
-    
-    "get_weather_vietnam": {
-        "handler": get_weather_vietnam,
-        "description": "🌤️ LẤY THỜI TIẾT VIỆT NAM. Hỗ trợ: Hà Nội, Hồ Chí Minh, Đà Nẵng, Hải Phòng, Cần Thơ, Nha Trang, Huế, Đà Lạt, Vũng Tàu, Quảng Ninh... Triggers: 'thời tiết', 'weather', 'trời hôm nay', 'nhiệt độ'.",
-        "parameters": {
-            "city": {
-                "type": "string",
-                "description": "Tên thành phố VN. VD: 'Hà Nội', 'Hồ Chí Minh', 'Đà Nẵng'. Mặc định: Hà Nội",
-                "required": False
-            }
-        }
-    },
-    
-    # "get_gold_price_vietnam": {
-    #     "handler": get_gold_price_vietnam,
-    #     "description": "💰 GIÁ VÀNG VIỆT NAM hôm nay (SJC, PNJ...). Triggers: 'giá vàng', 'gold price', 'vàng hôm nay'.",
-    #     "parameters": {}
-    # },
-    
-    "get_exchange_rate_vietnam": {
-        "handler": get_exchange_rate_vietnam,
-        "description": "💱 TỶ GIÁ NGOẠI TỆ so với VNĐ. Hỗ trợ: USD, EUR, JPY, GBP, CNY, KRW... Triggers: 'tỷ giá', 'exchange rate', 'đô la bao nhiêu'.",
-        "parameters": {
-            "currency": {
-                "type": "string",
-                "description": "Mã ngoại tệ (USD, EUR, JPY...). Mặc định: USD",
-                "required": False
-            }
-        }
-    },
-    
-    "get_fuel_price_vietnam": {
-        "handler": get_fuel_price_vietnam,
-        "description": "⛽ GIÁ XĂNG DẦU VIỆT NAM (RON 95, E5 RON 92, Diesel). Triggers: 'giá xăng', 'fuel price', 'xăng bao nhiêu'.",
-        "parameters": {}
-    },
-    
-    "get_daily_quote": {
-        "handler": get_daily_quote,
-        "description": "💬 CÂU NÓI HAY / TRÍCH DẪN ngẫu nhiên. Có quotes tiếng Việt và tiếng Anh. Triggers: 'câu nói hay', 'quote', 'danh ngôn', 'trích dẫn'.",
-        "parameters": {}
-    },
-    
-    "get_joke": {
-        "handler": get_joke,
-        "description": "😂 CHUYỆN CƯỜI tiếng Việt. Triggers: 'kể chuyện cười', 'joke', 'hài hước', 'vui vẻ', 'giải trí'.",
-        "parameters": {}
-    },
-    
-    "get_horoscope": {
-        "handler": get_horoscope,
-        "description": "🔮 TỬ VI / HOROSCOPE theo cung hoàng đạo. Triggers: 'tử vi', 'horoscope', 'cung hoàng đạo', 'xem vận mệnh'.",
-        "parameters": {
-            "zodiac": {
-                "type": "string",
-                "description": "Cung hoàng đạo (Bạch Dương, Kim Ngưu, Song Tử, Cự Giải, Sư Tử, Xử Nữ, Thiên Bình, Bọ Cạp, Nhân Mã, Ma Kết, Bảo Bình, Song Ngư)",
-                "required": False
-            }
-        }
-    },
-    
-    "get_today_in_history": {
-        "handler": get_today_in_history,
-        "description": "📜 SỰ KIỆN LỊCH SỬ ngày hôm nay. Triggers: 'lịch sử ngày này', 'today in history', 'ngày này năm xưa'.",
-        "parameters": {}
-    },
-    
-    "get_news_vietnam": {
-        "handler": get_news_vietnam,
-        "description": "📰 TIN TỨC MỚI NHẤT Việt Nam (VnExpress, Tuổi Trẻ). Triggers: 'tin tức', 'news', 'tin mới', 'đọc báo'.",
-        "parameters": {}
-    },
-    
-    "what_to_eat": {
-        "handler": what_to_eat,
-        "description": "🍽️ GỢI Ý MÓN ĂN hôm nay (ẩm thực Việt Nam). Triggers: 'ăn gì', 'gợi ý món ăn', 'what to eat', 'đói bụng'.",
-        "parameters": {}
-    },
-    
-    "get_lunar_date": {
-        "handler": get_lunar_date,
-        "description": "📅 NGÀY ÂM LỊCH hôm nay. Triggers: 'âm lịch', 'lunar date', 'ngày mấy âm'.",
-        "parameters": {}
-    },
-    
-    # KNOWLEDGE BASE TOOLS
-    "search_knowledge_base": {
-        "handler": search_knowledge_base,
-        "description": "🔍 TÌM KIẾM TRONG TÀI LIỆU CỦA USER (TF-IDF Ranking). ⚡ Dùng khi user muốn XEM DANH SÁCH tài liệu. Hỗ trợ: Multi-keyword search, relevance scoring, snippet highlighting. Triggers: 'tìm trong tài liệu', 'tìm trong file của tôi', 'có tài liệu nào về...', 'search my documents', 'list documents about...'. VD: 'tìm các tài liệu về hợp đồng', 'có file nào nói về khách hàng X'. Trả về: Top 5 documents với score, matched keywords, và snippets. ⚠️ Để TRẢ LỜI câu hỏi → Dùng get_knowledge_context() thay vì tool này!",
-        "parameters": {
-            "query": {
-                "type": "string",
-                "description": "Từ khóa/câu hỏi cần tìm. Có thể dùng nhiều từ khóa. VD: 'hợp đồng mua bán 2024', 'thông tin khách hàng', 'báo cáo tài chính quý 3'",
-                "required": True
-            }
-        }
-    },
-    "get_knowledge_context": {
-        "handler": get_knowledge_context,
-                "description": "📚 LẤY CONTEXT TỪ CƠ SỞ DỮ LIỆU TÀI LIỆU (Knowledge Base) - ⚡ GỌI ĐẦU TIÊN khi user hỏi về: dữ liệu cá nhân, tài liệu đã lưu, thông tin trong files, cơ sở dữ liệu nội bộ, knowledge base. Tool này tìm kiếm trong TẤT CẢ documents đã được index và trả về context đầy đủ nhất. ⛔ TRIGGERS BẮT BUỘC: 'cơ sở dữ liệu', 'database', 'knowledge base', 'tài liệu của tôi', 'thông tin trong file', 'theo dữ liệu', 'dữ liệu đã lưu', 'based on my docs', 'what's in my documents', 'tìm trong tài liệu', 'search my files', hỏi về TÊN NGƯỜI/DỰ ÁN cụ thể (có thể trong docs). ⚠️ QUAN TRỌNG: SAU KHI NHẬN CONTEXT, BẠN PHẢI ĐỌC VÀ TRẢ LỜI USER DỰA TRÊN CONTEXT ĐÓ! KHÔNG CHỈ DUMP CONTEXT RA! QUY TRÌNH: 1) Gọi get_knowledge_context(query='keywords') 2) Nhận context từ docs 3) ⚡ ĐỌC CONTEXT VÀ TRẢ LỜI CÂU HỎI USER THEO CONTEXT ĐÓ ⚡. VD: 'Nguyễn Văn A làm gì?' → get_knowledge_context(query='Nguyễn Văn A') → Đọc context → Trả lời 'Nguyễn Văn A là...' | 'Thông tin trong cơ sở dữ liệu về dự án X?' → get_knowledge_context(query='dự án X') → Đọc context → Trả lời thông tin dự án X | 'Tài liệu nói gì về ABC?' → get_knowledge_context(query='ABC') → Đọc context → Tóm tắt nội dung về ABC.",
-        "parameters": {
-            "query": {
-                "type": "string",
-                "description": "Câu hỏi/từ khóa cần tìm. Trích keywords từ câu hỏi user. VD: User: 'Nguyễn Văn A làm gì?' → query='Nguyễn Văn A'. User: 'Dự án X có mấy giai đoạn?' → query='dự án X giai đoạn'. User: 'Lê Trung Khoa là ai?' → query='Lê Trung Khoa'. Càng CỤ THỂ càng tốt! Bao gồm TÊN RIÊNG trong query.",
-                "required": False
-            },
-            "max_chars": {
-                "type": "integer",
-                "description": "Giới hạn ký tự context (default: 10000). Tăng lên 20000 nếu cần nhiều thông tin. Hệ thống tự động summarize nếu >2000 chars.",
-                "required": False
-            },
-            "use_gemini_filter": {
-                "type": "boolean",
-                "description": "🔥 Bật Gemini Smart Filter để lọc thông minh (default: False). Khi True: dùng Gemini Flash AI để lọc và chỉ trả về content THỰC SỰ liên quan, loại bỏ noise. Recommend: True khi KB có nhiều documents dài.",
-                "required": False
-            }
-        }
-    },
-    
-    "doc_reader_gemini_rag": {
-        "handler": doc_reader_gemini_rag,
-        "description": "📖 RAG NÂNG CAO - Đọc, tìm kiếm VÀ TRẢ LỜI TỰ ĐỘNG từ Knowledge Base bằng Gemini AI. Tool này TỰ ĐỘNG xử lý toàn bộ quy trình: chunk documents → semantic search → generate response. ⚡ DÙNG KHI: User muốn câu trả lời TRỰC TIẾP thay vì chỉ context. Khác với get_knowledge_context (chỉ trả context), tool này TRẢ LỜI LUÔN. VD: 'Hỏi tài liệu về X', 'Tóm tắt thông tin Y từ KB', 'Giải thích Z dựa trên docs'. Hỗ trợ semantic search (vector-like) cho độ chính xác cao.",
-        "parameters": {
-            "user_query": {
-                "type": "string",
-                "description": "Câu hỏi đầy đủ của user. VD: 'Dự án ABC có bao nhiêu giai đoạn?', 'Nguyễn Văn A đảm nhiệm vai trò gì?'",
-                "required": True
-            },
-            "chunk_size": {
-                "type": "integer",
-                "description": "Kích thước mỗi chunk (default: 1024 chars). Tăng lên 2048 cho documents dài.",
-                "required": False
-            },
-            "top_k": {
-                "type": "integer",
-                "description": "Số lượng chunks liên quan nhất để đưa vào context (default: 5). Tăng lên 10 nếu cần nhiều thông tin hơn.",
-                "required": False
-            }
-        }
-    },
-    
-    # =====================================================
-    # � GEMINI FLASH SMART KB FILTER - LỌC THÔNG TIN AI
-    # =====================================================
-    
-    "gemini_smart_kb_filter": {
-        "handler": gemini_smart_kb_filter,
-        "description": "🔥⚡ GEMINI FLASH LỌC THÔNG TIN THÔNG MINH - Sử dụng sức mạnh AI Gemini Flash để LỌC, TÌM KIẾM và TRÍCH XUẤT thông tin CHÍNH XÁC từ Knowledge Base. Tool này LOẠI BỎ NOISE, chỉ trả về content THỰC SỰ LIÊN QUAN. 🎯 DÙNG KHI: 1) KB có nhiều documents dài, 2) Cần lọc chính xác thông tin cụ thể, 3) Muốn tóm tắt/trích xuất facts, 4) get_knowledge_context trả về quá nhiều noise. ⚡ ƯU ĐIỂM: Gemini AI đọc và hiểu ngữ cảnh, lọc thông minh hơn TF-IDF. Triggers: 'lọc thông tin', 'tìm chính xác', 'trích xuất từ database', 'dùng AI lọc', 'smart search KB'. VD: 'Dùng AI lọc thông tin về dự án X', 'Trích xuất facts về nhân viên A từ KB'.",
-        "parameters": {
-            "user_query": {
-                "type": "string",
-                "description": "Câu hỏi/yêu cầu cần lọc thông tin. VD: 'Thông tin về dự án ABC', 'Chi tiết nhân viên Nguyễn Văn A'",
-                "required": True
-            },
-            "filter_mode": {
-                "type": "string",
-                "description": "Chế độ lọc: 'relevant' (mặc định - chỉ giữ phần liên quan), 'summary' (tóm tắt), 'extract' (trích xuất facts/entities), 'qa' (trả lời trực tiếp)",
-                "required": False
-            },
-            "max_documents": {
-                "type": "integer",
-                "description": "Số documents tối đa để xử lý (default: 10). Tăng lên 20 nếu cần tìm rộng hơn.",
-                "required": False
-            },
-            "output_format": {
-                "type": "string",
-                "description": "Format output: 'structured' (JSON), 'raw' (text thô), 'concise' (ngắn gọn nhất)",
-                "required": False
-            }
-        }
-    },
-    
-    # =====================================================
-    # 🔥🌐 GEMINI SMART ANALYZE - PHÂN TÍCH + GOOGLE SEARCH
-    # =====================================================
-    
-    "gemini_smart_analyze": {
-        "handler": gemini_smart_analyze,
-        "description": "🔥🌐⚡⚡ PHÂN TÍCH THÔNG MINH (Gemini + Web) - ⛔⛔ BẮT BUỘC DÙNG NGAY khi user nói: 'phân tích', 'analyze', 'tìm hiểu', 'nghiên cứu', 'đánh giá', 'so sánh', 'review', 'xu hướng', 'trend'. ❌ KHÔNG DÙNG web_search khi có các từ này! Tool này TỰ ĐỘNG: 1) Tìm Google, 2) Gemini phân tích, 3) Trả kết quả hoàn chỉnh. VD: 'phân tích thị trường', 'tìm hiểu về AI', 'đánh giá iPhone', 'xu hướng 2025'.",
-        "parameters": {
-            "user_query": {
-                "type": "string",
-                "description": "Vấn đề cần phân tích. VD: 'Phân tích xu hướng AI 2025', 'Đánh giá thị trường bất động sản'",
-                "required": True
-            },
-            "analysis_type": {
-                "type": "string",
-                "description": "Loại phân tích: 'comprehensive' (đầy đủ, mặc định), 'quick' (nhanh, tóm tắt), 'deep' (sâu, đa chiều)",
-                "required": False
-            },
-            "include_web_search": {
-                "type": "boolean",
-                "description": "Có tìm kiếm web không? Mặc định True. Set False nếu chỉ cần phân tích từ KB.",
-                "required": False
-            },
-            "include_kb": {
-                "type": "boolean",
-                "description": "Có tìm trong Knowledge Base không? Mặc định False. Set True để kết hợp cả web + KB.",
-                "required": False
-            },
-            "max_search_results": {
-                "type": "integer",
-                "description": "Số kết quả web search tối đa (default: 8). Tăng lên 15 nếu cần nhiều nguồn hơn.",
-                "required": False
-            }
-        }
-    },
-    
-    # =====================================================
-    # 🔍 RAG SYSTEM - RETRIEVAL AUGMENTED GENERATION
-    # =====================================================
-    
-    "web_search": {
-        "handler": web_search if RAG_AVAILABLE else None,
-        "description": "🌐 TÌM KIẾM WEB ĐƠN GIẢN - Chỉ dùng cho câu hỏi đơn giản: 'ai là tổng thống', 'giá vàng', 'thời tiết'. ⚠️ NẾU user nói 'phân tích/tìm hiểu/đánh giá/nghiên cứu' → DÙNG gemini_smart_analyze THAY VÌ tool này!",
-        "parameters": {
-            "query": {
-                "type": "string",
-                "description": "Từ khóa tìm kiếm (nên thêm năm hoặc 'mới nhất')",
-                "required": True
-            },
-            "max_results": {
-                "type": "integer",
-                "description": "Số kết quả tối đa (mặc định 5)",
-                "required": False
-            }
-        }
-    },
-    
-    "get_realtime_info": {
-        "handler": get_realtime_info if RAG_AVAILABLE else None,
-        "description": "⚡⚡ THÔNG TIN THỜI GIAN THỰC - ⛔⛔ BẮT BUỘC GỌI TRƯỚC MỌI CÂU TRẢ LỜI về: giá cả, tỷ giá, thời tiết, người nổi tiếng, chức vụ hiện tại, sự kiện đang xảy ra. ❌ KHÔNG BAO GIỜ tự trả lời bằng kiến thức cũ! ✅ GỌI TOOL NÀY TRƯỚC → nhận kết quả → rồi trả lời user.",
-        "parameters": {
-            "query": {
-                "type": "string",
-                "description": "Câu hỏi cần thông tin thời gian thực",
-                "required": True
-            }
-        }
-    },
-    
-    "rag_search": {
-        "handler": rag_search if RAG_AVAILABLE else None,
-        "description": "🔍 RAG SEARCH HYBRID - Tìm kiếm KẾT HỢP từ Internet + Tài liệu nội bộ. Tự động chọn nguồn phù hợp nhất. sources='web' cho Internet, 'local' cho tài liệu nội bộ, 'hybrid' cho cả hai, 'auto' để AI tự chọn.",
-        "parameters": {
-            "query": {
-                "type": "string",
-                "description": "Câu hỏi hoặc từ khóa tìm kiếm",
-                "required": True
-            },
-            "sources": {
-                "type": "string",
-                "description": "Nguồn: 'auto', 'web', 'local', 'hybrid' (mặc định: auto)",
-                "required": False
-            },
-            "max_results": {
-                "type": "integer",
-                "description": "Số kết quả tối đa (mặc định 8)",
-                "required": False
-            }
-        }
-    },
-    
-    "smart_answer": {
-        "handler": smart_answer if RAG_AVAILABLE else None,
-        "description": "🧠 SMART ANSWER - AI tự động phân tích câu hỏi và chọn nguồn TỐT NHẤT (Internet/Tài liệu nội bộ/Hybrid) để trả lời. Dùng khi không chắc nguồn nào phù hợp. Tool trả về context đã tối ưu để trả lời.",
-        "parameters": {
-            "query": {
-                "type": "string",
-                "description": "Câu hỏi của user",
-                "required": True
-            }
-        }
-    }
+    "list_conversation_files": {"handler": list_conversation_files, "description": "📂 Liệt kê file hội thoại đã lưu", "parameters": {}}
 }
 
 # ============================================================

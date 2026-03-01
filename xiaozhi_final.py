@@ -26,11 +26,11 @@ def _check_single_instance():
                     return True
         return False
     
-    if is_port_in_use(8000):
+    if is_port_in_use(9000):
         print("\n✅ [SingleInstance] miniZ MCP đã đang chạy!")
         print("    🌐 Mở trình duyệt đến instance hiện tại...")
         import webbrowser
-        webbrowser.open("http://localhost:8000")
+        webbrowser.open("http://localhost:9000")
         print("    ✅ Đã mở giao diện")
         sys.exit(0)
 
@@ -425,8 +425,8 @@ import re
 # 🔄 SMART TRUNCATE FOR LLM - Giới hạn text gửi về LLM
 # ============================================================
 
-MAX_LLM_RESPONSE_CHARS = 2000  # Giới hạn 2000 ký tự cho response gửi LLM
-MAX_TTS_RESPONSE_CHARS = 800   # Giới hạn 800 ký tự cho TTS (robot nói trực tiếp)
+MAX_LLM_RESPONSE_CHARS = 1500  # Giới hạn 1500 ký tự cho response gửi LLM (giảm từ 2000 → nhanh hơn)
+MAX_TTS_RESPONSE_CHARS = 500   # Giới hạn 500 ký tự cho TTS (robot nói trực tiếp, giảm từ 800)
 
 
 def clean_markdown_for_tts(text: str) -> str:
@@ -513,47 +513,62 @@ def smart_truncate_for_llm(text: str, max_chars: int = MAX_LLM_RESPONSE_CHARS) -
 
 def format_result_for_llm(result: dict, max_chars: int = MAX_LLM_RESPONSE_CHARS) -> str:
     """
-    Format và truncate result dict thành text cho LLM
-    
-    Args:
-        result: Dict kết quả từ tool
-        max_chars: Giới hạn ký tự
-    
-    Returns:
-        Text đã format và truncate
+    ⚡ OPTIMIZED: Format result dict thành plain text ngắn gọn cho LLM
+    Ưu tiên trả text trực tiếp thay vì JSON verbose
     """
-    import json
+    if not isinstance(result, dict):
+        text = str(result)
+        return smart_truncate_for_llm(text, max_chars)
     
-    # Nếu là response_text từ Gemini, ưu tiên nó
-    if isinstance(result, dict):
-        if result.get("response_text"):
-            text = result["response_text"]
-            return smart_truncate_for_llm(text, max_chars)
-        
-        # Nếu có context (từ knowledge base), ưu tiên
-        if result.get("context"):
-            text = result["context"]
-            return smart_truncate_for_llm(text, max_chars)
-        
-        # Nếu có message, dùng message
-        if result.get("message"):
-            text = result["message"]
-            # Nếu message ngắn, thêm thông tin khác
-            if len(text) < max_chars * 0.5:
-                extra_info = []
-                for key in ["summary", "content", "data", "results"]:
-                    if result.get(key):
-                        val = result[key]
-                        if isinstance(val, str):
-                            extra_info.append(val)
-                        elif isinstance(val, (list, dict)):
-                            extra_info.append(json.dumps(val, ensure_ascii=False, indent=1))
-                if extra_info:
-                    text += "\n\n" + "\n".join(extra_info)
-            return smart_truncate_for_llm(text, max_chars)
+    # ⚡ Priority 1: response_text (từ Gemini/GPT)
+    if result.get("response_text"):
+        return smart_truncate_for_llm(result["response_text"], max_chars)
     
-    # Default: convert to JSON
-    text = json.dumps(result, ensure_ascii=False, indent=1)
+    # ⚡ Priority 2: context (từ KB)
+    if result.get("context"):
+        return smart_truncate_for_llm(result["context"], max_chars)
+    
+    # ⚡ Priority 3: message + data quan trọng
+    if result.get("message"):
+        msg = str(result["message"])
+        
+        # Thêm results/data nếu có và message ngắn
+        extra_parts = []
+        for key in ("results", "data", "content", "summary", "articles"):
+            val = result.get(key)
+            if val:
+                if isinstance(val, list):
+                    # Format list ngắn gọn
+                    items = []
+                    for item in val[:5]:  # Max 5 items
+                        if isinstance(item, dict):
+                            # Lấy title/name/text từ dict
+                            item_text = item.get("title") or item.get("name") or item.get("text") or item.get("body") or str(item)[:80]
+                            items.append(f"• {item_text}")
+                        else:
+                            items.append(f"• {str(item)[:80]}")
+                    if items:
+                        extra_parts.append("\n".join(items))
+                elif isinstance(val, str) and len(val) > 10:
+                    extra_parts.append(val)
+        
+        if extra_parts:
+            msg += "\n\n" + "\n".join(extra_parts)
+        
+        return smart_truncate_for_llm(msg, max_chars)
+    
+    # ⚡ Priority 4: Nếu chỉ có success + ít key → format ngắn
+    if len(result) <= 4:
+        parts = []
+        for k, v in result.items():
+            if k in ("success", "_vlc_hint"):
+                continue
+            parts.append(f"{k}: {v}")
+        if parts:
+            return smart_truncate_for_llm("\n".join(parts), max_chars)
+    
+    # Default: compact JSON (no indent)
+    text = json.dumps(result, ensure_ascii=False, separators=(',', ':'))
     return smart_truncate_for_llm(text, max_chars)
 
 
@@ -1010,8 +1025,8 @@ async def get_system_info(category="all"):
         }
 
 # Tool retry configuration (từ repo chính thức)
-MAX_TOOL_RETRIES = 3
-TOOL_RETRY_INTERVAL = 2  # seconds
+MAX_TOOL_RETRIES = 2  # Giảm từ 3 → 2 để LLM nhận response nhanh hơn
+TOOL_RETRY_INTERVAL = 0.5  # Giảm từ 2s → 0.5s
 
 # ============================================================
 # 🧠 INTENT DETECTION LLM - Phân tích ý định trước khi xử lý
@@ -1063,6 +1078,27 @@ class IntentDetector:
         r'(tài\s*liệu|document|file)',
         r'(trong\s*thư\s*viện|knowledge\s*base)',
         r'(tra\s*cứu\s*nội\s*bộ)',
+    ]
+    
+    RIDDLE_PATTERNS = [
+        r'(câu\s*đố|đố\s*vui|đố\s*mẹo|đố\s*em|đố\s*bé)',
+        r'(hỏi\s*đố|ra\s*đố|đố\s*gì|đố\s*con)',
+        r'(con\s*gì.*\?|quả\s*gì.*\?|cái\s*gì.*\?)',
+        r'(riddle|quiz\s*vui)',
+        r'(giải\s*đố|đố\s*hay)',
+    ]
+    
+    FAIRY_TALE_PATTERNS = [
+        r'(kể\s*chuyện|kể\s*truyện|nghe\s*chuyện|nghe\s*truyện)',
+        r'(truyện\s*cổ\s*tích|cổ\s*tích|chuyện\s*cổ)',
+        r'(ngày\s*xưa.*có|fairy\s*tale)',
+        r'(tấm\s*cám|thạch\s*sanh|sọ\s*dừa|cây\s*khế)',
+        r'(sơn\s*tinh|thủy\s*tinh|thánh\s*gióng|chú\s*cuội)',
+        r'(hồ\s*gươm|trầu\s*cau|bánh\s*chưng|cóc\s*kiện)',
+        r'(con\s*rồng\s*cháu\s*tiên|lạc\s*long\s*quân|âu\s*cơ)',
+        r'(nàng\s*tiên\s*ốc|dưa\s*hấu|mai\s*an\s*tiêm)',
+        r'(kể.*cho\s*bé|chuyện.*cho\s*bé|truyện.*cho\s*bé)',
+        r'(đọc\s*truyện|đọc\s*chuyện)',
     ]
     
     SYSTEM_INFO_PATTERNS = [
@@ -1165,6 +1201,28 @@ class IntentDetector:
                     "reason": f"Detected knowledge pattern: {pattern}"
                 }
         
+        # Check riddle patterns (câu đố vui)
+        for pattern in cls.RIDDLE_PATTERNS:
+            if re.search(pattern, text_lower):
+                return {
+                    "intent": "riddle",
+                    "suggested_tool": "get_riddle",
+                    "confidence": 0.9,
+                    "should_force_tool": True,
+                    "reason": f"Detected riddle pattern: {pattern}"
+                }
+        
+        # Check fairy tale patterns (truyện cổ tích)
+        for pattern in cls.FAIRY_TALE_PATTERNS:
+            if re.search(pattern, text_lower):
+                return {
+                    "intent": "fairy_tale",
+                    "suggested_tool": "tell_fairy_tale",
+                    "confidence": 0.9,
+                    "should_force_tool": True,
+                    "reason": f"Detected fairy tale pattern: {pattern}"
+                }
+        
         # General intent - không cần force tool
         return {
             "intent": "general",
@@ -1262,264 +1320,68 @@ else:
     CONFIG_FILE = Path(__file__).parent / "xiaozhi_endpoints.json"
 
 GEMINI_API_KEY = ""  # Sẽ được load từ xiaozhi_endpoints.json
+GEMINI_API_KEY_BACKUP = ""  # 🔄 Key dự phòng Gemini
 OPENAI_API_KEY = ""  # Sẽ được load từ xiaozhi_endpoints.json
 SERPER_API_KEY = ""  # Google Search API - Miễn phí 2500 queries/tháng
+SERPER_API_KEY_BACKUP = ""  # 🔄 Key dự phòng Serper Google Search
 
 # ============================================================
 # 🎵 MUSIC SYSTEM PROMPT - Hướng dẫn LLM về Music Tools
 # ============================================================
 MUSIC_SYSTEM_PROMPT = """
-🎵 ĐIỀU KHIỂN NHẠC - QUAN TRỌNG!
+⚡ HƯỚNG DẪN NHANH - miniZ MCP Server (Docker Edition)
 
-⚡ QUY TẮC #1: KHI NGHE TỪ KHÓA DƯỚI ĐÂY → GỌI TOOL NGAY, KHÔNG HỎI LẠI!
+📌 QUY TẮC VÀNG: GỌI TOOL → ĐỌC KẾT QUẢ → TRẢ LỜI NGẮN GỌN!
 
-┌─────────────────────────────────────────────────────────────┐
-│ 📌 TỪ KHÓA → GỌI TOOL                                       │
-├─────────────────────────────────────────────────────────────┤
-│ "bài tiếp"/"next"/"chuyển bài" → music_next()               │
-│ "bài trước"/"quay lại"        → music_previous()            │
-│ "dừng"/"pause"/"tạm dừng"     → pause_music()               │
-│ "tắt nhạc"/"stop"             → stop_music()                │
-│ "tiếp tục"/"resume"           → resume_music()              │
-│ "phát bài [tên]"              → play_music(filename="tên")  │
-└─────────────────────────────────────────────────────────────┘
+🔴 BẮT BUỘC GỌI TOOL - KHÔNG TỰ TRẢ LỜI:
+• Giá cả (vàng, crypto, xăng, USD...) → google_realtime_search(query) 🔥
+• Tỷ giá, giá bitcoin, giá cổ phiếu → google_realtime_search(query) 🔥
+• Xổ số, số số, kết quả xổ số, XSMB/XSMT/XSMN → google_realtime_search("kết quả xổ số [miền/đài] hôm nay") 🎰
+• Tin tức, sự kiện mới nhất → google_realtime_search(query) hoặc get_vnexpress_news()
+• Thời tiết → get_weather_vietnam(city)
+• Câu đố vui, đố bé, đố mẹo → get_riddle(topic) hoặc search_riddles(keyword) 🧩
+• Kể chuyện, truyện cổ tích, ngày xưa → tell_fairy_tale(title/keyword) 📖
+• Danh sách truyện cổ tích → list_fairy_tales() 📚
+• Câu hỏi không biết/không hiểu → ask_gemini(prompt) 🧠
+• Câu hỏi phức tạp, phân tích, dịch → ask_gemini(prompt) 🧠
+• Người nổi tiếng, sản phẩm mới → google_realtime_search(query)
+• Tài liệu user → get_knowledge_context(query)
 
-⚠️ VOICE VARIANTS (ESP32 recognition sai):
-• "bai tiep", "tiep theo", "nex", "ních" → music_next()
-• "bai truoc", "quay lai", "pre"        → music_previous()
-• "dung", "pao", "poz", "tam dung"       → pause_music()
-• "tat nhac", "stóp", "dung han"         → stop_music()
+⚠️ TUYỆT ĐỐI KHÔNG tự bịa giá cả, tỷ giá - PHẢI tra Google trước!
+⚠️ Không biết câu trả lời → GỌI ask_gemini(), ĐỪNG đoán!
 
-🔥 NGUYÊN TẮC: GỌI TOOL TRỰC TIẾP, KHÔNG CẦN HỎI!
-• User: "bài tiếp" → Bạn GỌI music_next() → Trả lời "Đã chuyển bài"
-• User: "dừng"     → Bạn GỌI pause_music() → Trả lời "Đã tạm dừng"
-• User: "quay lại" → Bạn GỌI music_previous() → Trả lời "Đã quay lại"
+🧩 QUY TẮC CÂU ĐỐ:
+• Chỉ đọc 1 câu đố + gợi ý, KHÔNG nói đáp án
+• Đợi bé trả lời xong mới tiết lộ đáp án
+• KHÔNG hỏi câu đố thứ 2 ngay, đợi bé yêu cầu thêm
+• Trường "_answer_hidden" chứa đáp án - chỉ nói khi bé trả lời xong
 
-📍 Server: Python-VLC Player (tích hợp sẵn)
-📁 Thư mục nhạc: F:\\nhac
+📖 QUY TẮC KỂ CHUYỆN:
+• Kể ĐÚNG 1 câu chuyện được trả về, KHÔNG kể thêm
+• KHÔNG hỏi câu đố sau khi kể chuyện
+• KHÔNG gọi thêm tool sau khi kể xong
+• Kể xong thì dừng, đợi bé yêu cầu tiếp
 
-🎬 YOUTUBE: CHỈ khi user nói "youtube"/"video" → youtube_* tools
-   ✨ NEW: open_youtube() GIỜ TỰ ĐỘNG PHÁT VIDEO TRỰC TIẾP!
-   - Query >= 2 từ → Direct video (youtube.com/watch?v=...)
-   - Query 1 từ → Search page
-   VD: "mở youtube Lạc Trôi" hoặc "mở youtube Sơn Tùng MTP" → PHÁT VIDEO NGAY!
-═══════════════════════════════════════════════════════════════
-🔧 FUZZY MATCHING - HỖ TRỢ VOICE RECOGNITION
-═══════════════════════════════════════════════════════════════
+🚫 CẤM NÓI: "đã nghe rõ", "chưa nghe rõ", "nói lại", "không rõ", "không hiểu"
+→ Thay vào đó: GỌI ask_gemini(prompt) hoặc google_realtime_search(query) để tìm câu trả lời!
+→ Nếu STT sai chính tả (VD: "số số" = "xổ số"), vẫn phải đoán ý và gọi tool!
 
-Hệ thống có fuzzy matching cho các biến thể:
-• "bai tiep" → "bài tiếp" 
-• "bai truoc" → "bài trước"
-• "phat nhac" → "phát nhạc"
-• "nếch" → "next"
-• "prê" → "previous"
-
-→ Cứ gửi nguyên văn lệnh, hệ thống sẽ tự nhận dạng!
-
-═══════════════════════════════════════════════════════════════
-🎵 VLC MUSIC CONTROLS - ĐIỀU KHIỂN NHẠC
-═══════════════════════════════════════════════════════════════
-
-⚡⚡⚡ BẮT BUỘC: KHI USER YÊU CẦU ĐIỀU KHIỂN NHẠC → GỌI TOOL NGAY! ⚡⚡⚡
-
-🚫 TUYỆT ĐỐI CẤM TỰ TRẢ LỜI "OK" hoặc "Đã chuyển bài" mà KHÔNG GỌI TOOL!
-
-📌 MAPPING COMMANDS → TOOLS (BẮT BUỘC GỌI):
-┌─────────────────────────────────────────────────────────────┐
-│ "bài tiếp", "next", "skip"           → music_next()       │
-│ "quay lại", "bài trước", "previous"  → music_previous()   │
-│ "tạm dừng", "pause"                   → pause_music()      │
-│ "tiếp tục", "resume", "phát tiếp"    → resume_music()     │
-│ "dừng", "stop"                        → stop_music()       │
-│ "phát [tên bài]", "play [song]"      → play_music(song)   │
-└─────────────────────────────────────────────────────────────┘
-
-✅ WORKFLOW ĐÚNG:
-User: "bài tiếp"
-→ GỌI: music_next()
-→ NHẬN: {"success": true, "message": "Đã chuyển: Song.mp3"}
-→ TRẢ LỜI: "Đã chuyển sang bài tiếp: Song.mp3"
-
-❌ WORKFLOW SAI (CẤM):
-User: "bài tiếp"
-→ Trả lời trực tiếp: "OK, đã chuyển bài"  ← SAI! KHÔNG GỌI TOOL!
-
-🔴 RULES NGHIÊM NGẶT:
-1. PHẢI gọi tool TRƯỚC khi trả lời
-2. KHÔNG được giả định thành công
-3. PHẢI đợi tool response
-4. CHỈ trả lời dựa trên tool result
-
-⚠️ ĐẶC BIỆT: Các từ "next", "previous", "pause", "stop" → 100% GỌI TOOL!
-
-═══════════════════════════════════════════════════════════════
-🎵 VLC MUSIC CONTROLS - ĐIỀU KHIỂN NHẠC
-═══════════════════════════════════════════════════════════════
-
-⚡⚡⚡ BẮT BUỘC: KHI USER YÊU CẦU ĐIỀU KHIỂN NHẠC → GỌI TOOL NGAY! ⚡⚡⚡
-
-🚫 TUYỆT ĐỐI CẤM TỰ TRẢ LỜI "OK" hoặc "Đã chuyển bài" mà KHÔNG GỌI TOOL!
-
-📌 MAPPING COMMANDS → TOOLS (BẮT BUỘC GỌI):
-┌─────────────────────────────────────────────────────────────┐
-│ "bài tiếp", "next", "skip"           → music_next()       │
-│ "quay lại", "bài trước", "previous"  → music_previous()   │
-│ "tạm dừng", "pause"                   → pause_music()      │
-│ "tiếp tục", "resume", "phát tiếp"    → resume_music()     │
-│ "dừng", "stop"                        → stop_music()       │
-│ "phát [tên bài]", "play [song]"      → play_music(song)   │
-└─────────────────────────────────────────────────────────────┘
-
-✅ WORKFLOW ĐÚNG:
-User: "bài tiếp"
-→ GỌI: music_next()
-→ NHẬN: {"success": true, "message": "Đã chuyển: Song.mp3"}
-→ TRẢ LỜI: "Đã chuyển sang bài tiếp: Song.mp3"
-
-❌ WORKFLOW SAI (CẤM):
-User: "bài tiếp"
-→ Trả lời trực tiếp: "OK, đã chuyển bài"  ← SAI! KHÔNG GỌI TOOL!
-
-🔴 RULES NGHIÊM NGẶT:
-1. PHẢI gọi tool TRƯỚC khi trả lời
-2. KHÔNG được giả định thành công
-3. PHẢI đợi tool response
-4. CHỈ trả lời dựa trên tool result
-
-⚠️ ĐẶC BIỆT: Các từ "next", "previous", "pause", "stop" → 100% GỌI TOOL!
-
-═══════════════════════════════════════════════════════════════
-📚 KNOWLEDGE BASE - TÀI LIỆU CỦA USER (TỰ ĐỘNG TÌM KIẾM)
-═══════════════════════════════════════════════════════════════
-
-🔥 QUY TẮC VÀNG: KHI NGHI NGỜ THÔNG TIN CÓ THỂ Ở TRONG TÀI LIỆU → GỌI KB NGAY!
-
-⚡ AUTO-TRIGGERS - Gemini TỰ ĐỘNG GỌI KB khi phát hiện:
-┌─────────────────────────────────────────────────────────────┐
-│ 📌 DIRECT COMMANDS (100% gọi KB):                           │
-│ • "tìm trong tài liệu", "tra cứu KB", "search documents"    │
-│ • "theo file của tôi", "trong dữ liệu", "in my docs"        │
-│ • "kiểm tra tài liệu", "xem trong KB", "check docs"         │
-│                                                              │
-│ 🔍 IMPLICIT QUERIES (phát hiện thông minh):                 │
-│ • "[tên cụ thể] là gì/ai/ở đâu" (VD: "Lê Trung Khoa là ai")│
-│ • "thông tin về [X]" (VD: "thông tin về dự án ABC")        │
-│ • "dự án/hợp đồng/báo cáo [X]" (tên riêng, không phổ biến) │
-│ • "theo dữ liệu...", "căn cứ vào...", "based on..."        │
-│ • "[X] có bao nhiêu...", "[X] như thế nào"                  │
-│                                                              │
-│ ❓ SMART DETECTION (nghi ngờ → thử KB):                     │
-│ • Câu hỏi về người/công ty/dự án CỤ THỂ (không phổ biến)  │
-│ • Câu hỏi về con số, số liệu, thống kê (có thể từ báo cáo) │
-│ • Câu hỏi yêu cầu thông tin CHI TIẾT (có thể trong docs)   │
-└─────────────────────────────────────────────────────────────┘
-
-📖 WORKFLOW CHUẨN:
-┌─────────────────────────────────────────────────────────────┐
-│ User: "Lê Trung Khoa là ai?"                                │
-│ ↓                                                            │
-│ [Gemini phát hiện: tên cụ thể → có thể trong KB]           │
-│ ↓                                                            │
-│ Gọi: get_knowledge_context(query="Lê Trung Khoa")          │
-│ ↓                                                            │
-│ Nhận: Context từ "kiến thức c.docx" về Lê Trung Khoa       │
-│ ↓                                                            │
-│ Trả lời: "Theo tài liệu 'kiến thức c.docx', Lê Trung Khoa  │
-│ là người bị Bộ Công an ra quyết định truy nã ngày 5/12..."│
-└─────────────────────────────────────────────────────────────┘
-
-🎯 2 Tools chính:
-┌─────────────────────────────────────────────────────────────┐
-│ ✅ get_knowledge_context(query, max_chars=10000)            │
-│    → Lấy FULL CONTENT để trả lời (ƯU TIÊN DÙNG TOOL NÀY)   │
-│    → Có Gemini auto-summarize nếu nội dung dài >2000 chars │
-│    → Trả về context đầy đủ để LLM đọc và trả lời           │
-│                                                              │
-│ 📋 search_knowledge_base(query)                             │
-│    → Tìm và show SNIPPETS (dùng khi user muốn xem list)    │
-│    → Trả về top 5 documents với highlights                  │
-└─────────────────────────────────────────────────────────────┘
-
-⚠️ PHÂN BIỆT:
-• "Lê Trung Khoa là ai?" → GỌI get_knowledge_context() (tên cụ thể → KB)
-• "Tổng thống Mỹ là ai?" → KHÔNG gọi KB (thông tin phổ biến)
-• "Python là gì?" → KHÔNG gọi KB (kiến thức chung)
-• "Dự án ABC có bao nhiêu giai đoạn?" → GỌI KB (tên dự án cụ thể)
-• "Nguyễn Công Huy sinh năm nào?" → GỌI KB (tên người cụ thể)
-
-🔴 QUY TẮC QUAN TRỌNG:
-1. NGHI NGỜ → GỌI KB (tốt hơn là bỏ lỡ thông tin)
-2. Nếu KB trả về "không tìm thấy" → Dùng kiến thức chung
-3. Nếu KB có kết quả → ƯU TIÊN context từ KB
-4. Luôn trích dẫn nguồn khi dùng KB: "Theo tài liệu '[tên file]'..."
-
-💡 TIP: Khi không chắc → GỌI get_knowledge_context() để kiểm tra!
-
-═══════════════════════════════════════════════════════════════
-🌐 RAG SYSTEM - RETRIEVAL AUGMENTED GENERATION
-═══════════════════════════════════════════════════════════════
-
-⛔⛔⛔ CẢNH BÁO NGHIÊM TRỌNG: BẠN KHÔNG CÓ KIẾN THỨC SAU 2024! ⛔⛔⛔
-
-🚫 TUYỆT ĐỐI CẤM TỰ TRẢ LỜI KHI CÂU HỎI CHỨA:
-• "hiện nay", "bây giờ", "hôm nay", "hiện tại"
-• "2024", "2025", "năm nay"
-• "mới nhất", "cập nhật", "gần đây"
-• "ai là", "là ai", "là gì", "ở đâu"
-• Tên người nổi tiếng: tổng thống, thủ tướng, CEO...
-• Giá cả: vàng, USD, bitcoin, chứng khoán...
-• Thời tiết, tin tức, sự kiện
-
-⚠️ LÝ DO: Kiến thức của bạn ĐÃ LỖI THỜI! Ví dụ:
-• Trump có thể đã trở lại làm tổng thống (bạn không biết)
-• Giá vàng có thể đã thay đổi (bạn không biết)
-• Có thể có CEO mới (bạn không biết)
-
-🔴 HÀNH ĐỘNG BẮT BUỘC:
-1. PHẢI GỌI web_search() hoặc get_realtime_info() TRƯỚC
-2. CHỜ kết quả tra cứu
-3. RỒI MỚI trả lời dựa trên thông tin mới nhất
-
-📌 TOOLS MAPPING (PHẢI SỬ DỤNG):
-┌────────────────────────────────────────────────────────────┐
-│ web_search(query)       → Tìm Internet (DuckDuckGo)       │
-│ get_realtime_info(query)→ Thông tin thời gian thực        │
-│ rag_search(query)       → Hybrid: Web + Local KB          │
-│ smart_answer(query)     → AI tự chọn nguồn tốt nhất       │
-└────────────────────────────────────────────────────────────┘
-
-📖 VÍ DỤ ĐÚNG:
-User: "Tổng thống Mỹ hiện tại là ai?"
-→ ❌ SAI: Trả lời "Joe Biden" (kiến thức cũ có thể sai!)
-→ ✅ ĐÚNG: GỌI get_realtime_info("tổng thống Mỹ hiện tại 2024")
-→ Nhận kết quả → Trả lời chính xác
-
-User: "Giá vàng hôm nay?"
-→ ❌ SAI: Đoán hoặc nói "tôi không biết"
-→ ✅ ĐÚNG: GỌI get_realtime_info("giá vàng SJC hôm nay")
-
-User: "Thời tiết Hà Nội?"
-→ ✅ GỌI: get_realtime_info("thời tiết Hà Nội hôm nay")
-
-🔥 QUY TẮC BẮT BUỘC:
-1. Câu hỏi về NGƯỜI → web_search("tên người + chức vụ")
-2. Câu hỏi về GIÁ CẢ → get_realtime_info()
-3. Câu hỏi về THỜI TIẾT → get_realtime_info()
-4. Câu hỏi về SỰ KIỆN → web_search()
-5. KHÔNG CHẮC → smart_answer() (AI tự động chọn)
-
-⚡ NHỚ: GỌI TOOL TRƯỚC, TRẢ LỜI SAU! KHÔNG BAO GIỜ TỰ ĐOÁN!
+⚡ TỐI ƯU TỐC ĐỘ:
+• Trả lời NGẮN (1-3 câu), đi thẳng vào vấn đề
+• KHÔNG lặp lại câu hỏi user
+• KHÔNG giải thích tool đã dùng
+• Chỉ nói kết quả cuối cùng
 """
 
 DEFAULT_ENDPOINT = {
     "name": "Thiết bị 1",
-    "token": "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOjQ1MzYxMSwiYWdlbnRJZCI6MTQ2OTg5OCwiZW5kcG9pbnRJZCI6ImFnZW50XzE0Njk4OTgiLCJwdXJwb3NlIjoibWNwLWVuZHBvaW50IiwiaWF0IjoxNzcxMTU2MDcwLCJleHAiOjE4MDI3MTM2NzB9.4A6_ULtlgpjirbPDzEeAgvtmIY7_Yhe6SkKWEeifTJpGanNnj2Ao4zECVT60LpMmzhxIF0wxxgkiLWZeE0iHRA",
-    "enabled": True
+    "token": "",
+    "enabled": False
 }
 
 def load_endpoints_from_file():
     """Đọc cấu hình endpoints từ file JSON"""
-    global GEMINI_API_KEY, OPENAI_API_KEY, SERPER_API_KEY
+    global GEMINI_API_KEY, GEMINI_API_KEY_BACKUP, OPENAI_API_KEY, SERPER_API_KEY, SERPER_API_KEY_BACKUP
     
     endpoints = None
     active_index = 0
@@ -1552,10 +1414,20 @@ def load_endpoints_from_file():
                     OPENAI_API_KEY = data['openai_api_key']
                     print(f"✅ [OpenAI] API key loaded from config (ends with ...{OPENAI_API_KEY[-8:]})")
                 
+                # Load backup Gemini API key
+                if data.get('gemini_api_key_backup'):
+                    GEMINI_API_KEY_BACKUP = data['gemini_api_key_backup']
+                    print(f"✅ [Gemini] Backup API key loaded (ends with ...{GEMINI_API_KEY_BACKUP[-8:]})")
+                
                 # Load Serper API key nếu có (Google Search)
                 if data.get('serper_api_key'):
                     SERPER_API_KEY = data['serper_api_key']
                     print(f"✅ [Serper] Google Search API key loaded from config (ends with ...{SERPER_API_KEY[-8:]})")
+                
+                # Load backup Serper API key
+                if data.get('serper_api_key_backup'):
+                    SERPER_API_KEY_BACKUP = data['serper_api_key_backup']
+                    print(f"✅ [Serper] Backup API key loaded (ends with ...{SERPER_API_KEY_BACKUP[-8:]})")
                 
         except Exception as e:
             print(f"⚠️ [Config] Error loading {CONFIG_FILE.name}: {e}")
@@ -1606,8 +1478,10 @@ def load_endpoints_from_file():
                 'endpoints': default_endpoints,
                 'active_index': 0,
                 'gemini_api_key': GEMINI_API_KEY,
+                'gemini_api_key_backup': GEMINI_API_KEY_BACKUP,
                 'openai_api_key': OPENAI_API_KEY,
                 'serper_api_key': SERPER_API_KEY,
+                'serper_api_key_backup': SERPER_API_KEY_BACKUP,
                 'last_updated': datetime.now().isoformat()
             }
             with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
@@ -1620,7 +1494,7 @@ def load_endpoints_from_file():
 
 def save_endpoints_to_file(endpoints, active_index, force_save=False):
     """Lưu cấu hình endpoints vào file JSON - LUÔN LƯU khi có thay đổi"""
-    global GEMINI_API_KEY, OPENAI_API_KEY, SERPER_API_KEY
+    global GEMINI_API_KEY, GEMINI_API_KEY_BACKUP, OPENAI_API_KEY, SERPER_API_KEY, SERPER_API_KEY_BACKUP
     
     try:
         # 🔥 FIX: Handle case where CONFIG_FILE is a directory
@@ -1634,8 +1508,10 @@ def save_endpoints_to_file(endpoints, active_index, force_save=False):
             'endpoints': endpoints,
             'active_index': active_index,
             'gemini_api_key': GEMINI_API_KEY,
+            'gemini_api_key_backup': GEMINI_API_KEY_BACKUP,
             'openai_api_key': OPENAI_API_KEY,
             'serper_api_key': SERPER_API_KEY,
+            'serper_api_key_backup': SERPER_API_KEY_BACKUP,
             'last_updated': datetime.now().isoformat()
         }
         
@@ -1648,8 +1524,10 @@ def save_endpoints_to_file(endpoints, active_index, force_save=False):
                     if (old_data.get('endpoints') == endpoints and 
                         old_data.get('active_index') == active_index and
                         old_data.get('gemini_api_key') == GEMINI_API_KEY and
+                        old_data.get('gemini_api_key_backup') == GEMINI_API_KEY_BACKUP and
                         old_data.get('openai_api_key') == OPENAI_API_KEY and
-                        old_data.get('serper_api_key') == SERPER_API_KEY):
+                        old_data.get('serper_api_key') == SERPER_API_KEY and
+                        old_data.get('serper_api_key_backup') == SERPER_API_KEY_BACKUP):
                         # Không có thay đổi gì cả, skip save
                         print(f"ℹ️ [Config] No changes detected, skipping save")
                         return True
@@ -1673,10 +1551,11 @@ def save_endpoints_to_file(endpoints, active_index, force_save=False):
 endpoints_config, loaded_active_index = load_endpoints_from_file()
 active_endpoint_index = loaded_active_index
 
-# Support 3 simultaneous MCP connections
-xiaozhi_connections = {0: None, 1: None, 2: None}  # Dict of {index: websocket}
-xiaozhi_connected = {0: False, 1: False, 2: False}  # Connection status for each device
-should_reconnect = {0: False, 1: False, 2: False}  # Reconnect flags
+# Support 100 simultaneous MCP connections
+MAX_DEVICES = 100
+xiaozhi_connections = {i: None for i in range(MAX_DEVICES)}  # Dict of {index: websocket}
+xiaozhi_connected = {i: False for i in range(MAX_DEVICES)}  # Connection status for each device
+should_reconnect = {i: False for i in range(MAX_DEVICES)}  # Reconnect flags
 
 active_connections = []
 
@@ -2146,7 +2025,7 @@ def format_tool_response(tool_name: str, response: dict) -> str:
     return "✅ Thực hiện thành công"
 
 print("🚀 miniZ MCP - Sidebar UI")
-print(f"🌐 Web: http://localhost:8000")
+print(f"🌐 Web: http://localhost:9000")
 print(f"📡 MCP: Multi-device ready")
 
 # ============================================================
@@ -8290,7 +8169,58 @@ Trả lời ngắn:
 
 
 # ============================================================================
-# 🔍 GEMINI WITH GOOGLE SEARCH GROUNDING
+# � API KEY FALLBACK HELPER - Auto-switch to backup key when primary fails
+# ============================================================================
+
+def get_gemini_api_key() -> str:
+    """Trả về Gemini API key hiện tại (primary hoặc backup)"""
+    return GEMINI_API_KEY or GEMINI_API_KEY_BACKUP or ""
+
+def get_serper_api_key() -> str:
+    """Trả về Serper API key hiện tại (primary hoặc backup)"""
+    return SERPER_API_KEY or SERPER_API_KEY_BACKUP or ""
+
+async def switch_to_backup_gemini_key(error_msg: str = "") -> bool:
+    """
+    🔄 Tự động chuyển sang Gemini backup key khi primary lỗi
+    Returns True nếu đã switch thành công
+    """
+    global GEMINI_API_KEY, GEMINI_API_KEY_BACKUP
+    
+    if GEMINI_API_KEY_BACKUP and GEMINI_API_KEY_BACKUP.strip():
+        old_key_tail = GEMINI_API_KEY[-8:] if GEMINI_API_KEY else "empty"
+        # Swap: backup → primary, primary → backup (để lần sau có thể thử lại)
+        GEMINI_API_KEY, GEMINI_API_KEY_BACKUP = GEMINI_API_KEY_BACKUP, GEMINI_API_KEY
+        # Sync to env
+        os.environ['GEMINI_API_KEY'] = GEMINI_API_KEY
+        print(f"🔄 [Gemini] Switched to backup key (was ...{old_key_tail} → now ...{GEMINI_API_KEY[-8:]}). Reason: {error_msg}")
+        # Save to config
+        save_endpoints_to_file(endpoints_config, active_endpoint_index, force_save=True)
+        return True
+    else:
+        print(f"⚠️ [Gemini] Primary key failed and no backup key available. Error: {error_msg}")
+        return False
+
+async def switch_to_backup_serper_key(error_msg: str = "") -> bool:
+    """
+    🔄 Tự động chuyển sang Serper backup key khi primary lỗi
+    """
+    global SERPER_API_KEY, SERPER_API_KEY_BACKUP
+    
+    if SERPER_API_KEY_BACKUP and SERPER_API_KEY_BACKUP.strip():
+        old_key_tail = SERPER_API_KEY[-8:] if SERPER_API_KEY else "empty"
+        SERPER_API_KEY, SERPER_API_KEY_BACKUP = SERPER_API_KEY_BACKUP, SERPER_API_KEY
+        os.environ['SERPER_API_KEY'] = SERPER_API_KEY
+        print(f"🔄 [Serper] Switched to backup key (was ...{old_key_tail} → now ...{SERPER_API_KEY[-8:]}). Reason: {error_msg}")
+        save_endpoints_to_file(endpoints_config, active_endpoint_index, force_save=True)
+        return True
+    else:
+        print(f"⚠️ [Serper] Primary key failed and no backup key available. Error: {error_msg}")
+        return False
+
+
+# ============================================================================
+# �🔍 GEMINI WITH GOOGLE SEARCH GROUNDING
 # ============================================================================
 # Tính năng cho phép Gemini tự động tra cứu Google để trả lời chính xác hơn
 # Sử dụng Google Search Grounding API chính thức
@@ -8532,6 +8462,194 @@ Hãy trả lời câu hỏi dựa trên kiến thức của bạn. Trả lời n
         return {"success": False, "error": str(e)}
 
 
+# ============================================================================
+# 🔍 GOOGLE REALTIME SEARCH - Tool cho LLM gọi trực tiếp Google Search
+# ============================================================================
+
+async def google_realtime_search(query: str) -> dict:
+    """
+    🔍 Tra cứu Google thời gian thực qua Gemini Search Grounding
+    
+    Dùng cho: giá vàng, giá crypto, tỷ giá, tin mới nhất, sự kiện,
+    người nổi tiếng, sản phẩm mới, xổ số, thông tin cần chính xác real-time.
+    
+    Ưu tiên: Gemini + Google Search → Serper API → DuckDuckGo
+    """
+    try:
+        # 🎰 DETECT LOTTERY QUERY - Tối ưu từ khóa xổ số (bao gồm STT errors)
+        lottery_keywords = ['xổ số', 'xo so', 'xsmb', 'xsmt', 'xsmn', 'lottery',
+                           'vietlott', 'mega', 'power 6', 'kết quả xổ',
+                           'giải đặc biệt', 'lô tô',
+                           # STT common errors: "xổ số" → "số số", "sổ số", "xố số"
+                           'số số', 'sổ số', 'xố số', 'xổ xố', 'xổ xổ',
+                           'so so', 'xo xo', 'xổ sổ']
+        # Tỉnh/thành phố có đài xổ số
+        lottery_provinces = [
+            'đắk lắk', 'dak lak', 'đẩk lắk', 'đắc lắc', 'dắc lắc',
+            'đồng nai', 'bình dương', 'vũng tàu', 'cần thơ', 'an giang',
+            'bến tre', 'bình thuận', 'bình định', 'bình phước',
+            'cà mau', 'đà nẵng', 'đồng tháp', 'gia lai',
+            'hà nội', 'hải phòng', 'khánh hòa', 'kinh giáng',
+            'kon tum', 'lâm đồng', 'long an', 'ninh thuận',
+            'phú yên', 'quảng bình', 'quảng nam', 'quảng ngãi',
+            'quảng ninh', 'quảng trị', 'sóc trăng', 'tây ninh',
+            'thừa thiên huế', 'tiền giang', 'trà vinh', 'vĩnh long',
+            'tp hcm', 'hồ chí minh', 'thái bình', 'nam định',
+            'hải dương', 'bắc ninh', 'thái nguyên',
+        ]
+        query_lower = query.lower()
+        is_lottery = any(kw in query_lower for kw in lottery_keywords)
+        
+        # Cũng detect nếu có tên tỉnh + "kết quả" hoặc "hôm nay" hoặc "đài"
+        if not is_lottery:
+            has_province = any(p in query_lower for p in lottery_provinces)
+            has_result_word = any(w in query_lower for w in ['kết quả', 'hôm nay', 'đài', 'ngày'])
+            if has_province and has_result_word:
+                is_lottery = True
+        
+        if is_lottery:
+            from datetime import datetime
+            today = datetime.now().strftime('%d/%m/%Y')
+            # Tối ưu query cho xổ số - thêm ngày và từ khóa cụ thể
+            if 'miền bắc' in query_lower or 'xsmb' in query_lower:
+                query = f"kết quả xổ số miền Bắc hôm nay {today} giải đặc biệt"
+            elif 'miền trung' in query_lower or 'xsmt' in query_lower:
+                query = f"kết quả xổ số miền Trung hôm nay {today} giải đặc biệt"
+            elif 'miền nam' in query_lower or 'xsmn' in query_lower:
+                query = f"kết quả xổ số miền Nam hôm nay {today} giải đặc biệt"
+            elif 'vietlott' in query_lower or 'mega' in query_lower or 'power' in query_lower:
+                query = f"kết quả Vietlott hôm nay {today}"
+            else:
+                # Tìm tên tỉnh cụ thể trong query
+                matched_province = None
+                for p in lottery_provinces:
+                    if p in query_lower:
+                        matched_province = p.title()
+                        break
+                if matched_province:
+                    query = f"kết quả xổ số {matched_province} hôm nay {today} giải đặc biệt"
+                else:
+                    query = f"kết quả xổ số hôm nay {today} giải đặc biệt các đài"
+            print(f"🎰 [GoogleRT] Lottery query optimized: {query}")
+        
+        # 1️⃣ ƯU TIÊN: Gemini + Google Search Grounding (chính xác nhất)
+        if GEMINI_AVAILABLE and GEMINI_API_KEY:
+            print(f"🔍 [GoogleRT] Trying Gemini + Google Search Grounding...")
+            result = await ask_gemini_with_google_search(query)
+            if result.get("success") and result.get("response_text"):
+                print(f"✅ [GoogleRT] Got result from Google Search Grounding ({len(result['response_text'])} chars)")
+                return {
+                    "success": True,
+                    "response_text": result["response_text"],
+                    "source": "google_search_grounding",
+                    "search_queries": result.get("search_queries", []),
+                    "grounding_chunks": result.get("grounding_chunks", []),
+                    "message": "✅ Đã tra cứu Google và tổng hợp kết quả"
+                }
+            # 🔄 AUTO-FALLBACK: Nếu Gemini lỗi API key → thử backup key
+            elif not result.get("success"):
+                error_msg = result.get("error", "")
+                if any(kw in str(error_msg).lower() for kw in ['api key', 'invalid', 'quota', 'rate limit', '429', '403', '401', 'permission', 'exhausted']):
+                    switched = await switch_to_backup_gemini_key(str(error_msg))
+                    if switched:
+                        print(f"🔄 [GoogleRT] Retrying with backup Gemini key...")
+                        result = await ask_gemini_with_google_search(query)
+                        if result.get("success") and result.get("response_text"):
+                            print(f"✅ [GoogleRT] Got result from backup Gemini key!")
+                            return {
+                                "success": True,
+                                "response_text": result["response_text"],
+                                "source": "google_search_grounding_backup",
+                                "message": "✅ Đã tra cứu Google (key dự phòng)"
+                            }
+        
+        # 2️⃣ FALLBACK: Serper API (Google Search trực tiếp)
+        serper_key = SERPER_API_KEY or SERPER_API_KEY_BACKUP
+        if serper_key and serper_key.strip():
+            print(f"🔍 [GoogleRT] Trying Serper API...")
+            try:
+                import requests
+                from datetime import datetime
+                url = "https://google.serper.dev/search"
+                headers = {"X-API-KEY": serper_key, "Content-Type": "application/json"}
+                payload = {"q": f"{query} {datetime.now().strftime('%Y')}", "gl": "vn", "hl": "vi", "num": 5}
+                response = requests.post(url, headers=headers, json=payload, timeout=8)
+                
+                # 🔄 AUTO-FALLBACK: Nếu Serper key lỗi → thử backup
+                if response.status_code in (401, 403, 429) and SERPER_API_KEY_BACKUP and serper_key != SERPER_API_KEY_BACKUP:
+                    print(f"🔄 [GoogleRT] Serper key failed ({response.status_code}), trying backup...")
+                    await switch_to_backup_serper_key(f"HTTP {response.status_code}")
+                    headers["X-API-KEY"] = SERPER_API_KEY
+                    response = requests.post(url, headers=headers, json=payload, timeout=8)
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    results_text = ""
+                    
+                    # Answer Box
+                    answer_box = data.get("answerBox", {})
+                    if answer_box:
+                        answer = answer_box.get("answer", "") or answer_box.get("snippet", "")
+                        if answer:
+                            results_text += f"📌 Kết quả: {answer}\n\n"
+                    
+                    # Knowledge Graph
+                    kg = data.get("knowledgeGraph", {})
+                    if kg.get("title") and kg.get("description"):
+                        results_text += f"🎯 {kg['title']}: {kg['description']}\n\n"
+                    
+                    # Organic Results
+                    for item in data.get("organic", [])[:5]:
+                        results_text += f"• {item.get('title', '')}: {item.get('snippet', '')}\n"
+                    
+                    if results_text:
+                        print(f"✅ [GoogleRT] Got result from Serper API")
+                        return {
+                            "success": True,
+                            "response_text": results_text.strip(),
+                            "source": "serper_google",
+                            "message": f"✅ Đã tra cứu Google ({datetime.now().strftime('%d/%m/%Y')})"
+                        }
+            except Exception as e:
+                print(f"⚠️ [GoogleRT] Serper error: {e}")
+        
+        # 3️⃣ FALLBACK: DuckDuckGo via rag_system
+        if RAG_AVAILABLE:
+            print(f"🔍 [GoogleRT] Trying DuckDuckGo fallback...")
+            result = await get_realtime_info(query)
+            if result.get("success"):
+                return result
+        
+        return {"success": False, "error": "Không thể tra cứu. Thiếu Gemini API key hoặc kết nối mạng."}
+        
+    except Exception as e:
+        print(f"❌ [GoogleRT] Error: {e}")
+        return {"success": False, "error": str(e)}
+
+
+async def smart_realtime_info(query: str) -> dict:
+    """
+    ⚡ Thông tin thời gian thực - Tự động chọn nguồn tốt nhất
+    
+    Flow: Google Search Grounding → Serper → DuckDuckGo → Gemini direct
+    Dùng cho mọi câu hỏi cần thông tin real-time: giá cả, tỷ giá, tin tức, thời tiết...
+    """
+    # Gọi google_realtime_search (đã có đầy đủ fallback chain)
+    result = await google_realtime_search(query)
+    
+    if result.get("success"):
+        return result
+    
+    # Last resort: Hỏi Gemini trực tiếp (có RAG tự động)
+    print(f"🔍 [SmartRT] All search methods failed, asking Gemini directly...")
+    gemini_result = await ask_gemini(query)
+    if gemini_result.get("success"):
+        gemini_result["source"] = "gemini_direct"
+        return gemini_result
+    
+    return {"success": False, "error": "Không thể lấy thông tin. Kiểm tra API key và kết nối mạng."}
+
+
 async def ask_gemini_direct(prompt: str, model: str = "models/gemini-3-flash-preview") -> dict:
     """
     Gọi Gemini trực tiếp KHÔNG có RAG - dùng cho summarization/analysis
@@ -8629,6 +8747,12 @@ async def ask_gemini(prompt: str, model: str = "models/gemini-3-flash-preview") 
             # Sự kiện xã hội
             'covid', 'earthquake', 'động đất', 'bão', 'storm', 'lũ lụt', 'flood',
             'tai nạn', 'accident', 'cháy', 'fire',
+            
+            # Xổ số, lottery (bao gồm STT errors)
+            'xổ số', 'xo so', 'lottery', 'kết quả xổ số', 'xsmb', 'xsmt', 'xsmn',
+            'miền bắc', 'miền trung', 'miền nam', 'vietlott', 'mega', 'power',
+            'đài', 'giải đặc biệt', 'giải nhất', 'lô tô', 'lô đề',
+            'số số', 'sổ số', 'xố số', 'xổ xố', 'so so',  # STT errors
             
             # Tra cứu chung
             'là ai', 'là gì', 'ở đâu', 'what is', 'where is', 'how much',
@@ -8748,17 +8872,18 @@ async def ask_gemini(prompt: str, model: str = "models/gemini-3-flash-preview") 
                 "error": "Gemini library chưa cài đặt. Chạy: pip install google-generativeai"
             }
         
-        # Kiểm tra API key
-        if not GEMINI_API_KEY or GEMINI_API_KEY.strip() == "":
+        # Kiểm tra API key - thử backup nếu primary trống
+        active_key = get_gemini_api_key()
+        if not active_key or active_key.strip() == "":
             return {
                 "success": False,
                 "error": "Gemini API key chưa được cấu hình. Vui lòng thêm 'gemini_api_key' vào xiaozhi_endpoints.json",
                 "help": "Lấy API key tại: https://aistudio.google.com/apikey"
             }
         
-        # Cấu hình Gemini với API key
-        genai.configure(api_key=GEMINI_API_KEY)
-        print(f"[Gemini] Configured with API key: ...{GEMINI_API_KEY[-8:]}")
+        # Cấu hình Gemini với API key (primary hoặc backup)
+        genai.configure(api_key=active_key)
+        print(f"[Gemini] Configured with API key: ...{active_key[-8:]}")
         
         # Khởi tạo model
         print(f"[Gemini] Creating model: {model}")
@@ -8871,6 +8996,39 @@ TRẢ LỜI (nhớ: hôm nay là {today_str}, phân tích thời gian chính xá
         # Import traceback để debug
         import traceback
         traceback.print_exc()
+        
+        # 🔄 AUTO-FALLBACK: Thử backup key nếu lỗi liên quan API key/quota
+        fallback_keywords = ['api key', 'invalid', 'quota', 'rate limit', '429', '403', '401', 'permission', 'exhausted', 'API_KEY_INVALID']
+        error_lower = error_msg.lower()
+        if any(kw.lower() in error_lower for kw in fallback_keywords):
+            switched = switch_to_backup_gemini_key(error_msg)
+            if switched:
+                print(f"🔄 [Gemini] Đang retry với backup key...")
+                try:
+                    retry_key = get_gemini_api_key()
+                    genai.configure(api_key=retry_key)
+                    gemini_model_retry = genai.GenerativeModel(model)
+                    response_retry = await asyncio.wait_for(
+                        asyncio.get_event_loop().run_in_executor(
+                            None, lambda: gemini_model_retry.generate_content(enhanced_prompt)
+                        ),
+                        timeout=20.0
+                    )
+                    response_text_retry = response_retry.text.strip() if response_retry.text else ""
+                    if response_text_retry:
+                        if len(response_text_retry) > MAX_LLM_RESPONSE_CHARS:
+                            response_text_retry = smart_truncate_for_llm(response_text_retry, MAX_LLM_RESPONSE_CHARS)
+                        print(f"✅ [Gemini] Backup key thành công!")
+                        return {
+                            "success": True,
+                            "prompt": prompt,
+                            "response_text": response_text_retry,
+                            "model": model,
+                            "message": f"✅ Gemini đã trả lời (backup key, model: {model})",
+                            "used_backup_key": True
+                        }
+                except Exception as retry_err:
+                    print(f"❌ [Gemini] Backup key cũng thất bại: {retry_err}")
         
         # Xử lý các lỗi phổ biến
         if "API_KEY_INVALID" in error_msg or "invalid API key" in error_msg.lower():
@@ -10185,6 +10343,372 @@ async def get_exchange_rate_vietnam(currency: str = "USD") -> dict:
                 return {"success": False, "error": f"Không tìm thấy tỷ giá {currency}"}
     except Exception as e:
         return {"success": False, "error": str(e)}
+
+
+# ============================================================================
+# 🧩 CÂU ĐỐ VUI & 📖 TRUYỆN CỔ TÍCH CHO BÉ - RAG Search
+# ============================================================================
+
+# ---- 🧩 DATABASE CÂU ĐỐ VUI ----
+RIDDLES_DB = [
+    # === Động vật ===
+    {"id": 1, "topic": "động vật", "question": "Con gì có cánh mà không biết bay, có mỏ mà không biết mổ?", "answer": "Con thú mỏ vịt", "hint": "Nó sống ở Úc", "difficulty": "khó"},
+    {"id": 2, "topic": "động vật", "question": "Con gì bốn chân mà đi bằng hai chân?", "answer": "Con người (khi còn bé)", "hint": "Nghĩ về em bé tập đi", "difficulty": "trung bình"},
+    {"id": 3, "topic": "động vật", "question": "Con gì đầu mèo, đuôi mèo mà không phải mèo?", "answer": "Con mèo con", "hint": "Nó vẫn là mèo nhưng nhỏ hơn", "difficulty": "dễ"},
+    {"id": 4, "topic": "động vật", "question": "Con gì càng tắm càng bẩn?", "answer": "Con nước (nước bẩn)", "hint": "Nghĩ về nước", "difficulty": "trung bình"},
+    {"id": 5, "topic": "động vật", "question": "Con gì mà ai cũng có, đi đâu cũng theo, nắng thì thấy, mưa thì mất?", "answer": "Cái bóng", "hint": "Nó xuất hiện khi có ánh sáng", "difficulty": "dễ"},
+    {"id": 6, "topic": "động vật", "question": "Con gì sáng đi bốn chân, trưa đi hai chân, tối đi ba chân?", "answer": "Con người (bé bò, lớn đi, già chống gậy)", "hint": "Câu đố của nhân sư Sphinx", "difficulty": "khó"},
+    {"id": 7, "topic": "động vật", "question": "Con gì không có chân mà đi khắp thế giới?", "answer": "Con cá", "hint": "Nó bơi dưới nước", "difficulty": "dễ"},
+    {"id": 8, "topic": "động vật", "question": "Con gì có nhà mà không có cửa?", "answer": "Con ốc sên", "hint": "Nó mang nhà trên lưng", "difficulty": "dễ"},
+    {"id": 9, "topic": "động vật", "question": "Con gì kêu ò ó o mỗi sáng?", "answer": "Con gà trống", "hint": "Nó gáy lúc trời sáng", "difficulty": "dễ"},
+    {"id": 10, "topic": "động vật", "question": "Con gì có vòi mà không phải vòi nước?", "answer": "Con voi", "hint": "Nó là con vật to nhất trên cạn", "difficulty": "dễ"},
+    {"id": 11, "topic": "động vật", "question": "Con gì mắt to như cái đĩa, bay khắp nơi bắt chuột giỏi?", "answer": "Con cú mèo", "hint": "Nó hoạt động ban đêm", "difficulty": "trung bình"},
+    {"id": 12, "topic": "động vật", "question": "Con gì bay cao bay xa, có bờm đẹp lắm ai cũng mê?", "answer": "Con ngựa (ngựa phi)", "hint": "Nó chạy rất nhanh", "difficulty": "trung bình"},
+    {"id": 13, "topic": "động vật", "question": "Con gì đen thui mà hát hay?", "answer": "Con dế", "hint": "Nó kêu rì rì ban đêm", "difficulty": "dễ"},
+    {"id": 14, "topic": "động vật", "question": "Con gì mỏ dài, chân cao, hay đứng một chân?", "answer": "Con cò", "hint": "Nó đứng ngoài đồng ruộng", "difficulty": "dễ"},
+    {"id": 15, "topic": "động vật", "question": "Con gì tám chân, sống dưới biển, có nhiều xúc tu?", "answer": "Con bạch tuộc", "hint": "Nó phun mực khi gặp nguy hiểm", "difficulty": "trung bình"},
+    
+    # === Trái cây & Thực vật ===
+    {"id": 16, "topic": "trái cây", "question": "Quả gì mà vỏ xanh, ruột đỏ, hạt đen?", "answer": "Quả dưa hấu", "hint": "Mùa hè ăn mát lắm", "difficulty": "dễ"},
+    {"id": 17, "topic": "trái cây", "question": "Quả gì có vua mà không có nước?", "answer": "Quả sầu riêng (vua trái cây)", "hint": "Nó rất nặng mùi", "difficulty": "trung bình"},
+    {"id": 18, "topic": "trái cây", "question": "Quả gì khi chín thì vàng, cong cong như lưỡi liềm?", "answer": "Quả chuối", "hint": "Khỉ rất thích ăn", "difficulty": "dễ"},
+    {"id": 19, "topic": "trái cây", "question": "Quả gì có gai nhọn bên ngoài, ngọt lịm bên trong?", "answer": "Quả mít hoặc sầu riêng", "hint": "Có nhiều múi bên trong", "difficulty": "dễ"},
+    {"id": 20, "topic": "trái cây", "question": "Quả gì nhỏ xíu, đỏ tươi, ai cũng thích trang trí bánh kem?", "answer": "Quả dâu tây", "hint": "Màu đỏ, hình trái tim", "difficulty": "dễ"},
+    {"id": 21, "topic": "trái cây", "question": "Quả gì tròn tròn, màu cam, nhiều vitamin C?", "answer": "Quả cam", "hint": "Tên nó trùng với màu sắc của nó", "difficulty": "dễ"},
+    {"id": 22, "topic": "thực vật", "question": "Cây gì không có lá mà có gai?", "answer": "Cây xương rồng", "hint": "Nó sống ở sa mạc", "difficulty": "dễ"},
+    {"id": 23, "topic": "thực vật", "question": "Hoa gì mà ban đêm mới nở?", "answer": "Hoa quỳnh", "hint": "Người ta nói 'thoáng như hoa...nở'", "difficulty": "khó"},
+    
+    # === Đồ vật ===
+    {"id": 24, "topic": "đồ vật", "question": "Cái gì có mặt mà không có mắt?", "answer": "Cái đồng hồ", "hint": "Nó có kim giờ, kim phút", "difficulty": "dễ"},
+    {"id": 25, "topic": "đồ vật", "question": "Cái gì càng giặt càng bẩn?", "answer": "Nước (nước giặt)", "hint": "Nó là chất lỏng", "difficulty": "trung bình"},
+    {"id": 26, "topic": "đồ vật", "question": "Cái gì có chân mà không đi được?", "answer": "Cái bàn, cái ghế", "hint": "Đồ đạc trong nhà", "difficulty": "dễ"},
+    {"id": 27, "topic": "đồ vật", "question": "Cái gì có răng mà không ăn được?", "answer": "Cái lược", "hint": "Dùng để chải tóc", "difficulty": "dễ"},
+    {"id": 28, "topic": "đồ vật", "question": "Cái gì không có chân mà chạy rất nhanh?", "answer": "Cái xe, hoặc thời gian", "hint": "Nó lăn bánh trên đường", "difficulty": "dễ"},
+    {"id": 29, "topic": "đồ vật", "question": "Cái gì dùng thì vứt đi, không dùng thì giữ lại?", "answer": "Cái neo (thuyền)", "hint": "Trên thuyền có", "difficulty": "khó"},
+    {"id": 30, "topic": "đồ vật", "question": "Cái gì đầy lỗ mà vẫn giữ được nước?", "answer": "Miếng bọt biển (xốp rửa bát)", "hint": "Dùng để rửa chén", "difficulty": "trung bình"},
+    
+    # === Tự nhiên ===
+    {"id": 31, "topic": "tự nhiên", "question": "Cái gì có thể đi khắp thế giới mà không cần bước chân?", "answer": "Gió", "hint": "Nó thổi mát vào mùa hè", "difficulty": "dễ"},
+    {"id": 32, "topic": "tự nhiên", "question": "Cái gì rơi xuống mà không bao giờ vỡ?", "answer": "Mưa (giọt mưa)", "hint": "Nó rơi từ trên trời", "difficulty": "dễ"},
+    {"id": 33, "topic": "tự nhiên", "question": "Cái gì không có tay mà vẽ được tranh?", "answer": "Sương giá (đóng băng trên kính)", "hint": "Xuất hiện vào mùa đông", "difficulty": "khó"},
+    {"id": 34, "topic": "tự nhiên", "question": "Cái gì có 7 màu sắc xuất hiện sau mưa?", "answer": "Cầu vồng", "hint": "Đỏ, cam, vàng, lục, lam, chàm, tím", "difficulty": "dễ"},
+    {"id": 35, "topic": "tự nhiên", "question": "Cái gì ban ngày biến mất, ban đêm trở lại?", "answer": "Ngôi sao", "hint": "Nó lấp lánh trên bầu trời", "difficulty": "dễ"},
+    
+    # === Toán học vui ===
+    {"id": 36, "topic": "toán học", "question": "Nếu có 3 quả táo và lấy đi 2 quả, bạn có mấy quả?", "answer": "2 quả (vì bạn đã lấy 2 quả)", "hint": "Chú ý câu hỏi hỏi 'bạn có'", "difficulty": "trung bình"},
+    {"id": 37, "topic": "toán học", "question": "Một số khi nhân với bất kỳ số nào cũng bằng 0. Đó là số gì?", "answer": "Số 0", "hint": "Nó là số nhỏ nhất", "difficulty": "dễ"},
+    {"id": 38, "topic": "toán học", "question": "Tháng nào trong năm có 28 ngày?", "answer": "Tất cả 12 tháng đều có 28 ngày", "hint": "Đừng nghĩ chỉ tháng 2", "difficulty": "trung bình"},
+    {"id": 39, "topic": "toán học", "question": "Số nào mà đọc xuôi hay ngược đều giống nhau?", "answer": "Số đối xứng (palindrome), ví dụ: 121, 1331", "hint": "Ví dụ 11, 22, 33...", "difficulty": "trung bình"},
+    {"id": 40, "topic": "toán học", "question": "Bố và con đi câu cá, câu được 3 con. Bố con mỗi người 1 con, vậy còn lại mấy con?", "answer": "0 con, vì chỉ có 3 người: ông, bố, con", "hint": "Bố cũng là con của ông", "difficulty": "khó"},
+]
+
+# ---- 📖 DATABASE TRUYỆN CỔ TÍCH ----
+FAIRY_TALES_DB = [
+    {
+        "id": 1,
+        "title": "Tấm Cám",
+        "keywords": ["tấm cám", "cô tấm", "dì ghẻ", "giày", "cá bống"],
+        "age": "4+",
+        "summary": "Câu chuyện về cô gái hiền lành bị dì ghẻ bắt nạt nhưng cuối cùng được hạnh phúc.",
+        "story": "Ngày xưa, có cô bé tên Tấm rất hiền lành. Mẹ Tấm mất sớm, bố lấy dì ghẻ sinh ra Cám. Dì ghẻ rất ác, bắt Tấm làm việc suốt ngày. Một hôm dì bảo Tấm và Cám đi bắt tép, ai được nhiều thì thưởng. Cám lừa đổ hết tép của Tấm. Tấm khóc, ông Bụt hiện lên cho Tấm con cá bống. Tấm nuôi cá, nhưng Cám giết mất. Ông Bụt bảo Tấm chôn xương cá, mọc lên cây đào đẹp. Ngày hội, ông Bụt biến quần áo đẹp và đôi giày thủy tinh cho Tấm. Tấm đánh rơi giày, vua nhặt được tìm người đi vừa. Tấm đi vừa giày, vua cưới Tấm làm hoàng hậu. Từ đó Tấm sống hạnh phúc mãi mãi."
+    },
+    {
+        "id": 2,
+        "title": "Sọ Dừa",
+        "keywords": ["sọ dừa", "chàng trai", "ba cô gái", "phú ông"],
+        "age": "4+",
+        "summary": "Chàng trai hình dạng xấu xí nhưng có tài năng, cưới được cô gái út xinh đẹp.",
+        "story": "Ngày xưa có hai vợ chồng nghèo hiếm muộn. Bà mẹ uống nước dừa rồi sinh ra đứa con tròn như trái dừa, không tay không chân, gọi là Sọ Dừa. Ai cũng chê cười nhưng Sọ Dừa rất thông minh. Lớn lên Sọ Dừa đi chăn bò cho phú ông, bò con nào cũng béo tốt. Phú ông có ba cô con gái, hai cô chị kiêu ngạo, chỉ có cô út hiền lành hay mang cơm cho Sọ Dừa. Sọ Dừa xin cưới cô út, đêm tân hôn biến thành chàng trai tuấn tú. Hai cô chị ghen tức hại cô út, nhưng cô út được cứu sống. Sọ Dừa đỗ trạng nguyên, vợ chồng sống hạnh phúc."
+    },
+    {
+        "id": 3,
+        "title": "Thạch Sanh",
+        "keywords": ["thạch sanh", "lý thông", "chằn tinh", "đại bàng", "công chúa", "cây đàn thần"],
+        "age": "5+",
+        "summary": "Chàng trai nghèo có sức mạnh phi thường, diệt yêu quái cứu công chúa.",
+        "story": "Thạch Sanh mồ côi, được thần dạy võ nghệ. Lý Thông lừa Thạch Sanh đi canh miếu thờ nơi có chằn tinh. Thạch Sanh dùng búa thần giết chằn tinh, nhưng Lý Thông cướp công. Sau đó, đại bàng bắt công chúa, Thạch Sanh xuống hang cứu công chúa nhưng Lý Thông lấp hang. Thạch Sanh dùng cây đàn thần thoát ra. Tiếng đàn chữa lành bệnh câm cho công chúa. Vua gả công chúa cho Thạch Sanh. Lý Thông bị trừng phạt. Thạch Sanh nấu niêu cơm thần đãi quân giặc, ai ăn cũng no. Kẻ thù cảm phục, rút quân. Thạch Sanh làm vua, trị nước thái bình."
+    },
+    {
+        "id": 4,
+        "title": "Cây Tre Trăm Đốt",
+        "keywords": ["cây tre", "trăm đốt", "anh nông dân", "phú ông", "khắc nhập khắc xuất"],
+        "age": "5+",
+        "summary": "Anh nông dân thật thà dùng phép thuật nối tre trăm đốt để lấy vợ.",
+        "story": "Ngày xưa có anh nông dân thật thà đi ở cho phú ông. Phú ông hứa gả con gái nếu anh tìm được cây tre trăm đốt. Anh vào rừng tìm mãi không thấy bèn khóc. Ông Bụt hiện lên dạy anh câu thần chú: 'Khắc nhập khắc nhập' để nối tre, 'Khắc xuất khắc xuất' để tách ra. Anh gom đủ trăm đốt tre rời, đọc thần chú nối lại thành cây tre trăm đốt mang về. Phú ông định lật lọng, anh đọc thần chú dính phú ông vào cây tre. Phú ông van xin, cuối cùng phải giữ lời hứa gả con gái. Anh nông dân cưới vợ, sống hạnh phúc."
+    },
+    {
+        "id": 5,
+        "title": "Sự Tích Dưa Hấu",
+        "keywords": ["dưa hấu", "mai an tiêm", "đảo hoang", "hạt giống"],
+        "age": "4+",
+        "summary": "Mai An Tiêm bị đày ra đảo hoang, trồng dưa hấu thành công.",
+        "story": "Ngày xưa, Mai An Tiêm là con nuôi của vua Hùng. Chàng nói rằng của cải do tự tay mình làm ra, vua giận đày ra đảo hoang. Vợ chồng An Tiêm sống rất khó khăn trên đảo. Một hôm, con chim lạ bay đến đánh rơi mấy hạt giống. An Tiêm trồng thử, cây mọc lên cho quả to, vỏ xanh, ruột đỏ, ăn ngọt mát. Đó chính là quả dưa hấu. An Tiêm khắc tên lên dưa thả trôi biển. Thương nhân nhặt được dưa, tìm đến đảo mua bán. Vua Hùng biết chuyện, cho An Tiêm trở về, rất khâm phục. Từ đó giống dưa hấu lan rộng khắp nơi."
+    },
+    {
+        "id": 6,
+        "title": "Sự Tích Hồ Gươm",
+        "keywords": ["hồ gươm", "lê lợi", "rùa vàng", "gươm thần", "hồ hoàn kiếm"],
+        "age": "5+",
+        "summary": "Vua Lê Lợi mượn gươm thần đánh giặc Minh, sau trả lại cho Rùa Vàng.",
+        "story": "Ngày xưa, giặc Minh đô hộ nước ta, dân khổ sở. Đức Long Quân cho Lê Lợi mượn thanh gươm thần để đánh giặc. Lưỡi gươm do ngư dân kéo lưới bắt được dưới sông, chuôi gươm do Lê Lợi tìm thấy trên cây đa. Ráp vào vừa khít. Có gươm thần, Lê Lợi đánh đâu thắng đấy, quân Minh thua chạy. Lê Lợi lên ngôi vua. Một hôm vua đi thuyền trên hồ Tả Vọng, Rùa Vàng nổi lên xin lại gươm. Gươm rời tay vua bay về phía Rùa Vàng rồi lặn xuống hồ. Từ đó hồ được gọi là Hồ Hoàn Kiếm, hay Hồ Gươm."
+    },
+    {
+        "id": 7,
+        "title": "Sự Tích Trầu Cau",
+        "keywords": ["trầu cau", "trầu", "cau", "đá vôi", "hai anh em", "tình nghĩa"],
+        "age": "5+",
+        "summary": "Câu chuyện tình nghĩa anh em và vợ chồng hóa thành trầu, cau và đá vôi.",
+        "story": "Ngày xưa có hai anh em Tân và Lang giống nhau như đúc. Anh Tân lấy vợ, em Lang buồn bỏ đi, hóa thành tảng đá vôi bên bờ suối. Anh Tân đi tìm em, gặp tảng đá, khóc mãi rồi hóa thành cây cau mọc bên tảng đá. Chị vợ đi tìm chồng, ôm cây cau khóc rồi hóa thành dây trầu quấn quanh cây cau. Vua Hùng đi qua, nghe chuyện cảm động. Vua lấy lá trầu, quả cau, đá vôi nhai chung, thấy miệng đỏ thắm. Từ đó, trầu cau trở thành biểu tượng tình nghĩa, có tục ăn trầu và dùng trầu cau trong đám cưới."
+    },
+    {
+        "id": 8,
+        "title": "Con Rồng Cháu Tiên",
+        "keywords": ["rồng", "tiên", "lạc long quân", "âu cơ", "trăm trứng", "bọc trăm trứng", "nguồn gốc"],
+        "age": "4+",
+        "summary": "Câu chuyện về nguồn gốc của dân tộc Việt Nam - con Rồng cháu Tiên.",
+        "story": "Ngày xưa, Lạc Long Quân là vua biển sống dưới nước, cưới nàng Âu Cơ xinh đẹp sống trên núi. Âu Cơ sinh ra một bọc trăm trứng nở ra trăm người con trai khỏe mạnh. Nhưng vì Lạc Long Quân quen sống dưới nước, Âu Cơ quen sống trên cạn nên hai người chia tay. Năm mươi con theo mẹ lên núi, năm mươi con theo cha xuống biển. Người con cả lên ngôi vua, hiệu là Hùng Vương, đặt tên nước là Văn Lang. Vì vậy người Việt tự hào là con Rồng cháu Tiên, anh em một nhà."
+    },
+    {
+        "id": 9,
+        "title": "Cóc Kiện Trời",
+        "keywords": ["cóc", "kiện trời", "hạn hán", "mưa", "ông trời"],
+        "age": "4+",
+        "summary": "Cóc dẫn đầu các con vật đi kiện Trời xin mưa cứu hạn hán.",
+        "story": "Ngày xưa trời hạn hán lâu ngày, cây cối khô héo, muông thú khát nước. Cóc quyết tâm lên Thiên Đình kiện Trời. Dọc đường, Cóc rủ thêm Ong, Gấu, Cọp, Cáo cùng đi. Đến Thiên Đình, Ngọc Hoàng sai quân ra đánh. Ong đốt túi bụi, Gấu tát mạnh, Cọp vồ nhanh, quân trời thua hết. Ngọc Hoàng phải ra đàm phán. Cóc nói: 'Xin Ngọc Hoàng cho mưa xuống trần gian!' Ngọc Hoàng đồng ý và hứa: 'Từ nay, hễ Cóc nghiến răng kêu thì ta sẽ làm mưa.' Vì vậy dân gian có câu: 'Con Cóc là cậu ông Trời.' Từ đó mỗi khi Cóc kêu là trời sắp mưa."
+    },
+    {
+        "id": 10,
+        "title": "Chú Cuội Cung Trăng",
+        "keywords": ["cuội", "cung trăng", "cây đa", "mặt trăng", "trung thu"],
+        "age": "4+",
+        "summary": "Chú Cuội ngồi gốc cây đa trên cung trăng vì không giữ được cây thần.",
+        "story": "Ngày xưa có anh tiều phu tên Cuội tìm được cây đa thần có thể cứu người chết sống lại. Cuội cứu được nhiều người và cưới vợ. Cây đa cần tưới nước sạch, tuyệt đối không được tưới nước bẩn. Một hôm vợ Cuội vô tình tưới nước bẩn vào gốc cây. Cây đa bật gốc bay lên trời. Cuội chạy ra ôm cây giữ lại nhưng cây bay cao quá, mang cả Cuội lên tận cung trăng. Từ đó, mỗi đêm trăng tròn, nhìn lên mặt trăng ta thấy hình chú Cuội ngồi dưới gốc cây đa. Đêm Trung Thu, trẻ em rước đèn hát: 'Chú Cuội ngồi gốc cây đa...'"
+    },
+    {
+        "id": 11,
+        "title": "Thánh Gióng",
+        "keywords": ["thánh gióng", "phù đổng", "gióng", "giặc ân", "ngựa sắt", "roi sắt"],
+        "age": "5+",
+        "summary": "Cậu bé Gióng lớn nhanh như thổi, cưỡi ngựa sắt đánh đuổi giặc Ân.",
+        "story": "Đời Hùng Vương thứ sáu, giặc Ân sang xâm lược. Ở làng Gióng có cậu bé lên ba tuổi vẫn chưa biết nói biết cười. Nghe loa rao tìm người cứu nước, cậu bỗng cất tiếng: 'Mẹ ơi, mời sứ giả vào đây!' Cậu bảo sứ giả rèn ngựa sắt, roi sắt, áo giáp sắt. Dân làng nấu cơm cho cậu ăn, cậu lớn nhanh như thổi thành tráng sĩ. Gióng mặc giáp, cầm roi, phi ngựa sắt xông ra trận. Ngựa phun lửa, roi sắt đánh giặc tan tành. Roi gãy, Gióng nhổ tre đánh tiếp. Giặc Ân thua chạy. Gióng cùng ngựa bay lên trời. Vua phong là Phù Đổng Thiên Vương."
+    },
+    {
+        "id": 12,
+        "title": "Sơn Tinh Thủy Tinh",
+        "keywords": ["sơn tinh", "thủy tinh", "mỵ nương", "núi", "nước", "lũ lụt"],
+        "age": "5+",
+        "summary": "Sơn Tinh và Thủy Tinh tranh cưới Mỵ Nương, gây ra lũ lụt hàng năm.",
+        "story": "Vua Hùng có con gái Mỵ Nương xinh đẹp. Hai chàng trai Sơn Tinh (thần Núi) và Thủy Tinh (thần Nước) cùng đến cầu hôn. Vua ra điều kiện: ai mang sính lễ đến trước thì cưới Mỵ Nương. Sính lễ gồm: voi chín ngà, gà chín cựa, ngựa chín hồng mao. Sơn Tinh mang sính lễ đến sớm hơn, cưới được Mỵ Nương. Thủy Tinh tức giận, dâng nước lên đánh Sơn Tinh. Nước dâng đến đâu, Sơn Tinh nâng núi lên đến đó. Đánh mãi không thắng, Thủy Tinh rút lui. Hàng năm Thủy Tinh lại dâng nước trả thù, vì vậy mỗi năm nước ta đều có mùa lũ."
+    },
+    {
+        "id": 13,
+        "title": "Nàng Tiên Ốc",
+        "keywords": ["tiên ốc", "nàng tiên", "bà lão", "con ốc", "ốc"],
+        "age": "4+",
+        "summary": "Bà lão nghèo nuôi con ốc, hóa ra là nàng tiên giúp đỡ bà.",
+        "story": "Ngày xưa có bà lão nghèo sống bằng nghề mò cua bắt ốc. Một hôm bà bắt được con ốc rất đẹp, vỏ sáng lấp lánh. Bà thương không bán, mang về nuôi trong chum nước. Từ đó mỗi khi bà đi vắng, con ốc biến thành cô gái xinh đẹp, dọn nhà nấu cơm cho bà. Bà về nhà thấy cơm nước sẵn sàng, nhà cửa sạch sẽ mà không biết ai làm. Một hôm bà giả vờ đi rồi quay về, thấy nàng tiên bước ra từ vỏ ốc. Bà đập vỡ vỏ ốc. Nàng tiên không trở lại ốc được nữa, nhận bà làm mẹ. Hai mẹ con sống hạnh phúc bên nhau."
+    },
+    {
+        "id": 14,
+        "title": "Bánh Chưng Bánh Giầy",
+        "keywords": ["bánh chưng", "bánh giầy", "lang liêu", "vua hùng", "tết"],
+        "age": "4+",
+        "summary": "Hoàng tử Lang Liêu làm bánh chưng bánh giầy dâng vua cha, được truyền ngôi.",
+        "story": "Vua Hùng muốn truyền ngôi, bảo các hoàng tử tìm món ngon dâng lên. Các hoàng tử thi nhau tìm sơn hào hải vị. Riêng Lang Liêu nghèo nhất, chỉ có gạo nếp. Thần báo mộng bảo Lang Liêu: 'Gạo là quý nhất, hãy lấy gạo làm bánh.' Lang Liêu dùng gạo nếp, đậu xanh, thịt heo gói lá dong thành bánh vuông, luộc chín, gọi là bánh chưng, tượng trưng cho Đất. Gạo nếp giã nhuyễn nặn tròn gọi là bánh giầy, tượng trưng cho Trời. Vua Hùng ăn thấy ngon, ý nghĩa sâu xa, chọn Lang Liêu nối ngôi. Từ đó Tết Nguyên Đán nhà nhà gói bánh chưng."
+    },
+    {
+        "id": 15,
+        "title": "Cây Khế",
+        "keywords": ["cây khế", "ăn khế trả vàng", "chim", "may túi ba gang"],
+        "age": "4+",
+        "summary": "Anh hiền được chim ăn khế trả vàng, anh tham lam bị rơi xuống biển.",
+        "story": "Hai anh em chia gia tài, người anh tham lam lấy hết, chỉ để lại cho em cây khế. Mùa khế chín, chim lạ đến ăn. Em xin: 'Chim ơi đừng ăn khế của tôi.' Chim nói: 'Ăn khế trả vàng, may túi ba gang mang đi mà đựng.' Em may túi nhỏ ba gang, chim chở đến đảo vàng. Em lấy vừa đủ, trở nên giàu có. Anh biết chuyện, đòi đổi cây khế. Chim lại đến, anh may túi mười hai gang thật to. Đến đảo vàng, anh nhét đầy vàng, quá nặng, khi bay về giữa biển, anh rơi xuống biển. Câu chuyện dạy ta không nên tham lam."
+    },
+]
+
+async def get_riddle(topic: str = "", difficulty: str = "") -> dict:
+    """
+    🧩 Lấy câu đố vui ngẫu nhiên - Dùng cho giải trí, dạy trẻ em
+    
+    Args:
+        topic: Chủ đề (động vật, trái cây, đồ vật, tự nhiên, toán học, thực vật)
+        difficulty: Độ khó (dễ, trung bình, khó)
+    
+    Returns:
+        Câu đố với gợi ý và đáp án
+    """
+    try:
+        import random
+        
+        filtered = RIDDLES_DB.copy()
+        
+        # Lọc theo chủ đề
+        if topic:
+            topic_lower = topic.lower().strip()
+            # Map các từ khóa tương tự
+            topic_map = {
+                'con vật': 'động vật', 'thú': 'động vật', 'chim': 'động vật', 'cá': 'động vật',
+                'hoa quả': 'trái cây', 'quả': 'trái cây', 'fruit': 'trái cây',
+                'cây': 'thực vật', 'hoa': 'thực vật', 'lá': 'thực vật',
+                'vật dụng': 'đồ vật', 'đồ dùng': 'đồ vật', 'thing': 'đồ vật',
+                'thiên nhiên': 'tự nhiên', 'trời': 'tự nhiên', 'mưa': 'tự nhiên',
+                'toán': 'toán học', 'số': 'toán học', 'math': 'toán học',
+            }
+            mapped_topic = topic_map.get(topic_lower, topic_lower)
+            filtered = [r for r in filtered if mapped_topic in r['topic'].lower()]
+        
+        # Lọc theo độ khó
+        if difficulty:
+            diff_lower = difficulty.lower().strip()
+            filtered = [r for r in filtered if diff_lower in r['difficulty'].lower()]
+        
+        if not filtered:
+            filtered = RIDDLES_DB  # Fallback: lấy tất cả nếu không tìm thấy
+        
+        riddle = random.choice(filtered)
+        
+        return {
+            "success": True,
+            "riddle": riddle["question"],
+            "hint": riddle["hint"],
+            "_answer_hidden": riddle["answer"],
+            "topic": riddle["topic"],
+            "difficulty": riddle["difficulty"],
+            "message": f"🧩 Câu đố ({riddle['topic']}): {riddle['question']}\n💡 Gợi ý: {riddle['hint']}\n\n⚠️ QUAN TRỌNG: CHỈ ĐỌC CÂU ĐỐ VÀ GỢI Ý CHO BÉ. KHÔNG NÓI ĐÁP ÁN! Đợi bé trả lời xong mới tiết lộ đáp án. KHÔNG hỏi câu đố khác, KHÔNG gọi thêm tool."
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+async def search_riddles(keyword: str = "", count: int = 3) -> dict:
+    """
+    🔍 Tìm câu đố theo từ khóa
+    
+    Args:
+        keyword: Từ khóa tìm kiếm (VD: "con gì", "quả gì", "cái gì")
+        count: Số câu đố trả về (mặc định 3)
+    """
+    try:
+        import random
+        
+        if not keyword:
+            # Random pick
+            selected = random.sample(RIDDLES_DB, min(count, len(RIDDLES_DB)))
+        else:
+            keyword_lower = keyword.lower()
+            # Tìm trong câu hỏi, đáp án, topic
+            scored = []
+            for r in RIDDLES_DB:
+                score = 0
+                text = f"{r['question']} {r['answer']} {r['topic']} {r['hint']}".lower()
+                for word in keyword_lower.split():
+                    if word in text:
+                        score += 1
+                if score > 0:
+                    scored.append((score, r))
+            
+            scored.sort(key=lambda x: x[0], reverse=True)
+            selected = [r for _, r in scored[:count]]
+        
+        if not selected:
+            selected = random.sample(RIDDLES_DB, min(count, len(RIDDLES_DB)))
+        
+        riddles_text = ""
+        for i, r in enumerate(selected, 1):
+            riddles_text += f"{i}. 🧩 {r['question']}\n   💡 Gợi ý: {r['hint']}\n\n"
+        
+        # Ẩn đáp án - chỉ lưu riêng để LLM tiết lộ sau khi bé trả lời
+        answers_hidden = [{"id": i+1, "answer": r["answer"]} for i, r in enumerate(selected)]
+        
+        return {
+            "success": True,
+            "count": len(selected),
+            "_answers_hidden": answers_hidden,
+            "message": f"🧩 Có {len(selected)} câu đố:\n\n{riddles_text.strip()}\n\n⚠️ QUAN TRỌNG: CHỈ đọc CÂU ĐỐ ĐẦU TIÊN cho bé. KHÔNG nói đáp án! Đợi bé trả lời. KHÔNG đọc hết tất cả câu đố cùng lúc."
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+async def tell_fairy_tale(title: str = "", keyword: str = "") -> dict:
+    """
+    📖 Kể truyện cổ tích cho bé - Tìm theo tên hoặc từ khóa
+    
+    Args:
+        title: Tên truyện (VD: "Tấm Cám", "Thạch Sanh")
+        keyword: Từ khóa tìm kiếm (VD: "rồng", "công chúa", "vua")
+    """
+    try:
+        import random
+        
+        search_text = (title or keyword or "").lower().strip()
+        
+        if not search_text:
+            # Random story
+            tale = random.choice(FAIRY_TALES_DB)
+        else:
+            # Tìm kiếm
+            scored = []
+            for t in FAIRY_TALES_DB:
+                score = 0
+                # Check title
+                if search_text in t['title'].lower():
+                    score += 10
+                # Check keywords list
+                for kw in t['keywords']:
+                    if search_text in kw or kw in search_text:
+                        score += 5
+                # Check in story content
+                story_text = f"{t['summary']} {t['story']}".lower()
+                for word in search_text.split():
+                    if word in story_text:
+                        score += 1
+                if score > 0:
+                    scored.append((score, t))
+            
+            if scored:
+                scored.sort(key=lambda x: x[0], reverse=True)
+                tale = scored[0][1]
+            else:
+                tale = random.choice(FAIRY_TALES_DB)
+        
+        # Giới hạn truyện cho TTS (không quá dài, robot nói vừa đủ)
+        story_text = tale["story"]
+        if len(story_text) > 450:
+            # Cắt tại câu gần nhất trước 450 ký tự
+            cut_pos = story_text.rfind('.', 0, 450)
+            if cut_pos > 200:
+                story_text = story_text[:cut_pos+1]
+        
+        return {
+            "success": True,
+            "title": tale["title"],
+            "age": tale["age"],
+            "story": story_text,
+            "message": f"📖 {tale['title']}\n\n{story_text}\n\n⚠️ QUAN TRỌNG: Kể ĐÚNG câu chuyện trên cho bé nghe. KHÔNG kể thêm chuyện khác. KHÔNG hỏi câu đố. KHÔNG gọi thêm tool. Chỉ kể xong rồi dừng."
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+async def list_fairy_tales() -> dict:
+    """
+    📚 Danh sách tất cả truyện cổ tích có sẵn
+    """
+    try:
+        tales_list = ""
+        for i, t in enumerate(FAIRY_TALES_DB, 1):
+            tales_list += f"{i}. 📖 {t['title']} ({t['age']}) - {t['summary']}\n"
+        
+        return {
+            "success": True,
+            "count": len(FAIRY_TALES_DB),
+            "tales": [{"title": t["title"], "age": t["age"], "summary": t["summary"]} for t in FAIRY_TALES_DB],
+            "message": f"📚 Có {len(FAIRY_TALES_DB)} truyện cổ tích:\n\n{tales_list.strip()}"
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
 
 async def get_daily_quote() -> dict:
     """
@@ -12576,260 +13100,181 @@ def send_message_to_llm_sync(message: str, device_index: int = None, wait_respon
 
 TOOLS = {
     # ============================================================
-    # 📨 DOCKER EDITION - Chỉ giữ tools hoạt động trên Docker/Pi
+    # ⚡ DOCKER EDITION - OPTIMIZED: 30 tools
+    # + google_realtime_search: Google Search Grounding (real-time)
+    # + get_realtime_info: Auto-fallback chain (Google→Serper→DDG→Gemini)
+    # + ask_gemini: Fallback cho câu hỏi khó/không hiểu
+    # + get_riddle, search_riddles: Câu đố vui cho bé
+    # + tell_fairy_tale, list_fairy_tales: Truyện cổ tích cho bé
     # ============================================================
+    
+    # --- Core Communication ---
     "send_message_to_llm": {
         "handler": send_message_to_llm,
-        "description": "📨 GỬI TIN NHẮN CHO LLM/ROBOT - Gửi message qua WebSocket để LLM cloud đọc và TỰ TRẢ LỜI.",
+        "description": "Gửi tin nhắn cho LLM/Robot qua WebSocket",
         "parameters": {
-            "message": {"type": "string", "description": "Tin nhắn/câu hỏi muốn gửi cho LLM", "required": True},
-            "device_index": {"type": "integer", "description": "Index thiết bị (0, 1, hoặc 2)", "required": False},
-            "wait_response": {"type": "boolean", "description": "Có đợi LLM trả lời không?", "required": False},
-            "timeout": {"type": "integer", "description": "Thời gian chờ response (giây)", "required": False}
+            "message": {"type": "string", "description": "Tin nhắn gửi", "required": True},
+            "device_index": {"type": "integer", "description": "Index thiết bị (0-99)", "required": False}
         }
     },
     "broadcast_to_all_llm": {
         "handler": broadcast_to_all_llm,
-        "description": "📢 BROADCAST TIN NHẮN ĐẾN TẤT CẢ LLM/ROBOT.",
+        "description": "Broadcast tin nhắn đến tất cả LLM/Robot",
         "parameters": {
-            "message": {"type": "string", "description": "Tin nhắn muốn broadcast", "required": True},
-            "wait_response": {"type": "boolean", "description": "Có đợi response không?", "required": False}
+            "message": {"type": "string", "description": "Tin nhắn broadcast", "required": True}
         }
     },
-    "get_system_resources": {"handler": get_system_resources, "description": "📊 PERFORMANCE MONITORING - CPU %, RAM %, Disk %", "parameters": {}},
+    
+    # --- System Info (gộp get_system_resources + get_disk_usage + get_network_info) ---
+    "get_system_resources": {"handler": get_system_resources, "description": "CPU%, RAM%, Disk% hệ thống", "parameters": {}},
     "get_current_time": {"handler": get_current_time, "description": "Thời gian hiện tại", "parameters": {}},
-    "calculator": {"handler": calculator, "description": "Tính toán", "parameters": {"expression": {"type": "string", "description": "Biểu thức", "required": True}}},
-    # File/Process tools (Docker compatible)
-    "create_file": {"handler": create_file, "description": "Tạo file", "parameters": {"path": {"type": "string", "description": "Đường dẫn", "required": True}, "content": {"type": "string", "description": "Nội dung", "required": True}}},
-    "read_file": {"handler": read_file, "description": "Đọc file", "parameters": {"path": {"type": "string", "description": "Đường dẫn", "required": True}}},
-    "list_files": {"handler": list_files, "description": "Liệt kê files", "parameters": {"directory": {"type": "string", "description": "Thư mục", "required": True}}},
-    "get_network_info": {"handler": get_network_info, "description": "Thông tin mạng", "parameters": {}},
-    "get_disk_usage": {"handler": get_disk_usage, "description": "Thông tin đĩa", "parameters": {}},
-    "check_internet_connection": {"handler": check_internet_connection, "description": "🌐 Kiểm tra kết nối Internet", "parameters": {}},
+    "calculator": {"handler": calculator, "description": "Tính toán biểu thức", "parameters": {"expression": {"type": "string", "description": "Biểu thức toán", "required": True}}},
+    
+    # --- File (Docker compatible) ---
+    "create_file": {"handler": create_file, "description": "Tạo file mới", "parameters": {"path": {"type": "string", "description": "Đường dẫn", "required": True}, "content": {"type": "string", "description": "Nội dung", "required": True}}},
+    "read_file": {"handler": read_file, "description": "Đọc nội dung file", "parameters": {"path": {"type": "string", "description": "Đường dẫn", "required": True}}},
+    "list_files": {"handler": list_files, "description": "Liệt kê files trong thư mục", "parameters": {"directory": {"type": "string", "description": "Thư mục", "required": True}}},
 
-    # Task memory
+    # --- Task Memory (gộp 4 tools → 2) ---
     "remember_task": {
         "handler": remember_task,
-        "description": "📝 GHI NHỚ TÁC VỤ",
+        "description": "Ghi nhớ tác vụ đã thực hiện",
         "parameters": {
-            "tool_name": {"type": "string", "description": "Tên tool đã sử dụng", "required": True},
-            "params": {"type": "object", "description": "Tham số đã dùng", "required": False},
-            "result_message": {"type": "string", "description": "Kết quả/message", "required": False},
-            "user_request": {"type": "string", "description": "Yêu cầu gốc của user", "required": False}
+            "tool_name": {"type": "string", "description": "Tên tool đã dùng", "required": True},
+            "result_message": {"type": "string", "description": "Kết quả", "required": False},
+            "user_request": {"type": "string", "description": "Yêu cầu user", "required": False}
         }
     },
     "recall_tasks": {
         "handler": recall_tasks,
-        "description": "🧠 NHỚ LẠI TÁC VỤ",
+        "description": "Nhớ lại tác vụ đã làm",
         "parameters": {
-            "keyword": {"type": "string", "description": "Từ khóa tìm kiếm", "required": False},
+            "keyword": {"type": "string", "description": "Từ khóa", "required": False},
             "limit": {"type": "integer", "description": "Số lượng tối đa", "required": False}
         }
     },
-    "get_task_summary": {"handler": get_task_summary, "description": "📊 THỐNG KÊ TÁC VỤ", "parameters": {}},
-    "forget_all_tasks": {"handler": forget_all_tasks, "description": "🗑️ XÓA LỊCH SỬ", "parameters": {}},
 
-    # News & Info (HTTP-based, Docker compatible)
+    # --- News & Info (gộp 4 news tools → 2) ---
     "get_vnexpress_news": {
         "handler": get_vnexpress_news,
-        "description": "📰 Tin tức VnExpress",
+        "description": "Tin tức VnExpress theo chủ đề",
         "parameters": {
-            "category": {"type": "string", "description": "Chủ đề: home, thoi-su, the-gioi, kinh-doanh, giai-tri, the-thao", "required": False},
-            "max_articles": {"type": "integer", "description": "Số bài tối đa (1-20)", "required": False}
+            "category": {"type": "string", "description": "home/thoi-su/the-gioi/kinh-doanh/giai-tri/the-thao", "required": False},
+            "max_articles": {"type": "integer", "description": "Số bài (1-10)", "required": False}
         }
-    },
-    "get_news_summary": {
-        "handler": get_news_summary,
-        "description": "📰 Tóm tắt tin tức nhanh",
-        "parameters": {"category": {"type": "string", "description": "Chủ đề", "required": False}}
     },
     "search_news": {
         "handler": search_news,
-        "description": "🔍 Tìm tin tức theo từ khóa",
+        "description": "Tìm tin tức theo từ khóa",
         "parameters": {
             "keyword": {"type": "string", "description": "Từ khóa", "required": True},
-            "max_results": {"type": "integer", "description": "Số kết quả tối đa", "required": False}
+            "max_results": {"type": "integer", "description": "Số kết quả", "required": False}
         }
     },
-    "get_gold_price": {"handler": get_gold_price, "description": "💰 Giá vàng hôm nay", "parameters": {}},
+    "get_gold_price": {"handler": get_gold_price, "description": "Giá vàng SJC hôm nay", "parameters": {}},
     "get_weather_vietnam": {
         "handler": get_weather_vietnam,
-        "description": "🌤️ Thời tiết Việt Nam",
-        "parameters": {"city": {"type": "string", "description": "Tên thành phố VN", "required": False}}
+        "description": "Thời tiết Việt Nam",
+        "parameters": {"city": {"type": "string", "description": "Tên thành phố", "required": False}}
     },
     "get_exchange_rate_vietnam": {
         "handler": get_exchange_rate_vietnam,
-        "description": "💱 Tỷ giá ngoại tệ VNĐ",
-        "parameters": {"currency": {"type": "string", "description": "Mã ngoại tệ (USD, EUR...)", "required": False}}
+        "description": "Tỷ giá ngoại tệ VNĐ",
+        "parameters": {"currency": {"type": "string", "description": "USD/EUR/JPY...", "required": False}}
     },
-    "get_fuel_price_vietnam": {"handler": get_fuel_price_vietnam, "description": "⛽ Giá xăng dầu Việt Nam", "parameters": {}},
-    "get_daily_quote": {"handler": get_daily_quote, "description": "💬 Câu nói hay ngẫu nhiên", "parameters": {}},
-    "get_joke": {"handler": get_joke, "description": "😂 Chuyện cười tiếng Việt", "parameters": {}},
-    "get_horoscope": {
-        "handler": get_horoscope,
-        "description": "🔮 Tử vi / Horoscope",
-        "parameters": {"zodiac": {"type": "string", "description": "Cung hoàng đạo", "required": False}}
-    },
-    "get_today_in_history": {"handler": get_today_in_history, "description": "📜 Sự kiện lịch sử ngày hôm nay", "parameters": {}},
-    "get_news_vietnam": {"handler": get_news_vietnam, "description": "📰 Tin tức mới nhất Việt Nam", "parameters": {}},
-    "what_to_eat": {"handler": what_to_eat, "description": "🍽️ Gợi ý món ăn hôm nay", "parameters": {}},
-    "get_lunar_date": {"handler": get_lunar_date, "description": "📅 Ngày âm lịch hôm nay", "parameters": {}},
+    "get_fuel_price_vietnam": {"handler": get_fuel_price_vietnam, "description": "Giá xăng dầu VN", "parameters": {}},
+    "get_daily_quote": {"handler": get_daily_quote, "description": "Câu nói hay ngẫu nhiên", "parameters": {}},
+    "get_lunar_date": {"handler": get_lunar_date, "description": "Ngày âm lịch hôm nay", "parameters": {}},
 
-    # AI Tools (Gemini/GPT API - Docker compatible)
+    # --- AI Tools ---
     "ask_gemini": {
         "handler": ask_gemini,
-        "description": "✅ ƯU TIÊN DÙNG cho MỌI CÂU HỎI. Gemini trả lời TRỰC TIẾP, NHANH.",
+        "description": "🧠 Hỏi Gemini AI: câu hỏi khó, không hiểu, phân tích, dịch, giải thích",
         "parameters": {
-            "prompt": {"type": "string", "description": "Câu hỏi hoặc nội dung", "required": True},
-            "model": {"type": "string", "description": "Model Gemini", "required": False}
+            "prompt": {"type": "string", "description": "Câu hỏi hoặc yêu cầu", "required": True}
         }
-    },
-    "ask_gpt4": {
-        "handler": ask_gpt4,
-        "description": "TRẢ LỜI bằng OpenAI GPT-4 (cần API key).",
-        "parameters": {
-            "prompt": {"type": "string", "description": "Câu hỏi", "required": True},
-            "model": {"type": "string", "description": "Model OpenAI", "required": False}
-        }
-    },
-    "gemini_agent": {
-        "handler": ask_gemini_with_tools,
-        "description": "🤖 GEMINI AI AGENT - Gemini TỰ ĐỘNG gọi tools.",
-        "parameters": {
-            "prompt": {"type": "string", "description": "Lệnh gửi cho Gemini AI agent", "required": True},
-            "model": {"type": "string", "description": "Model Gemini", "required": False},
-            "auto_execute": {"type": "boolean", "description": "Tự động thực thi tools?", "required": False},
-            "max_tool_calls": {"type": "integer", "description": "Số tool tối đa", "required": False}
-        }
-    },
-    "analyze_gold_price_with_ai": {
-        "handler": analyze_gold_price_with_ai,
-        "description": "📊 Phân tích giá vàng với AI.",
-        "parameters": {"analysis_type": {"type": "string", "description": "Loại: compare_month, trend, forecast", "required": False}}
     },
     "gemini_smart_analyze": {
         "handler": gemini_smart_analyze,
-        "description": "🔥🌐 PHÂN TÍCH THÔNG MINH (Gemini + Web).",
+        "description": "Phân tích sâu (Gemini + Web + KB)",
         "parameters": {
-            "user_query": {"type": "string", "description": "Vấn đề cần phân tích", "required": True},
-            "analysis_type": {"type": "string", "description": "comprehensive/quick/deep", "required": False},
-            "include_web_search": {"type": "boolean", "description": "Tìm kiếm web?", "required": False},
-            "include_kb": {"type": "boolean", "description": "Tìm trong KB?", "required": False},
-            "max_search_results": {"type": "integer", "description": "Số kết quả web", "required": False}
+            "user_query": {"type": "string", "description": "Vấn đề phân tích", "required": True},
+            "include_web_search": {"type": "boolean", "description": "Tìm web?", "required": False}
         }
     },
 
-    # Knowledge Base Tools (Docker compatible)
-    "search_knowledge_base": {
-        "handler": search_knowledge_base,
-        "description": "🔍 TÌM KIẾM TRONG TÀI LIỆU CỦA USER",
-        "parameters": {"query": {"type": "string", "description": "Từ khóa/câu hỏi cần tìm", "required": True}}
-    },
+    # --- Knowledge Base (gộp 4 → 1: get_knowledge_context) ---
     "get_knowledge_context": {
         "handler": get_knowledge_context,
-        "description": "📚 LẤY CONTEXT TỪ KNOWLEDGE BASE.",
+        "description": "Tìm trong tài liệu/KB của user",
         "parameters": {
-            "query": {"type": "string", "description": "Câu hỏi/từ khóa", "required": False},
-            "max_chars": {"type": "integer", "description": "Giới hạn ký tự", "required": False},
-            "use_gemini_filter": {"type": "boolean", "description": "Bật Gemini Smart Filter?", "required": False}
-        }
-    },
-    "doc_reader_gemini_rag": {
-        "handler": doc_reader_gemini_rag,
-        "description": "📖 RAG NÂNG CAO - Đọc và TRẢ LỜI TỰ ĐỘNG từ KB bằng Gemini AI.",
-        "parameters": {
-            "user_query": {"type": "string", "description": "Câu hỏi đầy đủ", "required": True},
-            "chunk_size": {"type": "integer", "description": "Kích thước chunk", "required": False},
-            "top_k": {"type": "integer", "description": "Số chunks liên quan", "required": False}
-        }
-    },
-    "gemini_smart_kb_filter": {
-        "handler": gemini_smart_kb_filter,
-        "description": "🔥 GEMINI FLASH LỌC THÔNG TIN từ KB.",
-        "parameters": {
-            "user_query": {"type": "string", "description": "Câu hỏi cần lọc", "required": True},
-            "filter_mode": {"type": "string", "description": "relevant/summary/extract/qa", "required": False},
-            "max_documents": {"type": "integer", "description": "Số documents tối đa", "required": False},
-            "output_format": {"type": "string", "description": "structured/raw/concise", "required": False}
+            "query": {"type": "string", "description": "Câu hỏi/từ khóa", "required": True},
+            "max_chars": {"type": "integer", "description": "Giới hạn ký tự", "required": False}
         }
     },
 
-    # RAG System - Web Search (Docker compatible)
-    "web_search": {
-        "handler": web_search if RAG_AVAILABLE else None,
-        "description": "🌐 TÌM KIẾM WEB (DuckDuckGo).",
+    # --- Web/Google Search (real-time info) ---
+    "google_realtime_search": {
+        "handler": google_realtime_search,
+        "description": "🔍 Tra Google thời gian thực: giá cả, tỷ giá, crypto, tin tức, sự kiện",
         "parameters": {
-            "query": {"type": "string", "description": "Từ khóa tìm kiếm", "required": True},
-            "max_results": {"type": "integer", "description": "Số kết quả tối đa", "required": False}
+            "query": {"type": "string", "description": "Câu hỏi cần tra Google", "required": True}
         }
     },
     "get_realtime_info": {
-        "handler": get_realtime_info if RAG_AVAILABLE else None,
-        "description": "⚡ THÔNG TIN THỜI GIAN THỰC - giá cả, tỷ giá, thời tiết.",
+        "handler": smart_realtime_info,
+        "description": "⚡ Thông tin real-time (giá vàng, tỷ giá, tin mới nhất)",
         "parameters": {"query": {"type": "string", "description": "Câu hỏi", "required": True}}
     },
-    "rag_search": {
-        "handler": rag_search if RAG_AVAILABLE else None,
-        "description": "🔍 RAG SEARCH HYBRID - Internet + Tài liệu nội bộ.",
+    "web_search": {
+        "handler": web_search if RAG_AVAILABLE else None,
+        "description": "Tìm kiếm Internet (DuckDuckGo)",
         "parameters": {
-            "query": {"type": "string", "description": "Câu hỏi/từ khóa", "required": True},
-            "sources": {"type": "string", "description": "auto/web/local/hybrid", "required": False},
-            "max_results": {"type": "integer", "description": "Số kết quả tối đa", "required": False}
+            "query": {"type": "string", "description": "Từ khóa", "required": True},
+            "max_results": {"type": "integer", "description": "Số kết quả", "required": False}
         }
     },
-    "smart_answer": {
-        "handler": smart_answer if RAG_AVAILABLE else None,
-        "description": "🧠 SMART ANSWER - AI tự chọn nguồn tốt nhất để trả lời.",
-        "parameters": {"query": {"type": "string", "description": "Câu hỏi", "required": True}}
-    },
 
-    # Conversation & File Tools (Docker compatible)
+    # --- Save/Export ---
     "save_text_to_file": {
         "handler": save_text_to_file,
-        "description": "💾 LƯU VĂN BẢN thành file.",
+        "description": "Lưu văn bản thành file",
         "parameters": {
-            "content": {"type": "string", "description": "Nội dung văn bản", "required": True},
+            "content": {"type": "string", "description": "Nội dung", "required": True},
             "filename": {"type": "string", "description": "Tên file", "required": False}
         }
     },
-    "export_conversation": {
-        "handler": export_conversation_to_file,
-        "description": "📤 EXPORT LỊCH SỬ HỘI THOẠI ra file JSON.",
-        "parameters": {"filename": {"type": "string", "description": "Tên file", "required": False}}
+
+    # --- 🧩 Câu đố vui & 📖 Truyện cổ tích cho bé ---
+    "get_riddle": {
+        "handler": get_riddle,
+        "description": "🧩 Câu đố vui ngẫu nhiên cho bé (động vật, trái cây, đồ vật, toán học)",
+        "parameters": {
+            "topic": {"type": "string", "description": "Chủ đề: động vật/trái cây/đồ vật/tự nhiên/toán học", "required": False},
+            "difficulty": {"type": "string", "description": "Độ khó: dễ/trung bình/khó", "required": False}
+        }
     },
-    "get_user_context": {
-        "handler": lambda: {
-            "success": True,
-            "user_profile": get_user_profile_summary(),
-            "recent_conversation": get_conversation_context(10),
-            "hint": "Dùng thông tin này để hiểu người dùng tốt hơn"
-        },
-        "description": "📚 LẤY CONTEXT NGƯỜI DÙNG",
+    "search_riddles": {
+        "handler": search_riddles,
+        "description": "🔍 Tìm câu đố theo từ khóa (con gì, quả gì, cái gì...)",
+        "parameters": {
+            "keyword": {"type": "string", "description": "Từ khóa tìm câu đố", "required": False},
+            "count": {"type": "integer", "description": "Số câu đố (mặc định 3)", "required": False}
+        }
+    },
+    "tell_fairy_tale": {
+        "handler": tell_fairy_tale,
+        "description": "📖 Kể truyện cổ tích cho bé (Tấm Cám, Thạch Sanh, Sọ Dừa...)",
+        "parameters": {
+            "title": {"type": "string", "description": "Tên truyện (VD: Tấm Cám, Thạch Sanh)", "required": False},
+            "keyword": {"type": "string", "description": "Từ khóa (VD: công chúa, rồng, vua)", "required": False}
+        }
+    },
+    "list_fairy_tales": {
+        "handler": list_fairy_tales,
+        "description": "📚 Danh sách truyện cổ tích có sẵn",
         "parameters": {}
     },
-    "save_user_message": {
-        "handler": lambda message, context="": (
-            add_to_conversation("user", message, {"source": "robot", "context": context}),
-            {"success": True, "message": "Đã lưu tin nhắn người dùng"}
-        )[1],
-        "description": "💾 LƯU TIN NHẮN NGƯỜI DÙNG",
-        "parameters": {
-            "message": {"type": "string", "description": "Nội dung tin nhắn", "required": True},
-            "context": {"type": "string", "description": "Context bổ sung", "required": False}
-        }
-    },
-    "save_assistant_response": {
-        "handler": lambda response, tool_used="": (
-            add_to_conversation("assistant", response, {"source": "robot", "tool_used": tool_used}),
-            {"success": True, "message": "Đã lưu response của AI"}
-        )[1],
-        "description": "💾 LƯU RESPONSE CỦA AI",
-        "parameters": {
-            "response": {"type": "string", "description": "Nội dung response", "required": True},
-            "tool_used": {"type": "string", "description": "Tool đã dùng", "required": False}
-        }
-    },
-    "list_conversation_files": {"handler": list_conversation_files, "description": "📂 Liệt kê file hội thoại đã lưu", "parameters": {}}
 }
 
 # ============================================================
@@ -12870,7 +13315,7 @@ async def handle_xiaozhi_message(message: dict) -> dict:
     params = message.get("params", {})
     
     if method == "initialize":
-        # Trả về với instructions + VLC context
+        # Trả về instructions rút gọn cho Docker (không cần VLC context nếu không có VLC)
         vlc_context = get_vlc_context_for_llm()
         full_instructions = MUSIC_SYSTEM_PROMPT + vlc_context
         
@@ -12881,134 +13326,120 @@ async def handle_xiaozhi_message(message: dict) -> dict:
             "instructions": full_instructions
         }
     elif method == "tools/list":
-        # Support cursor pagination (từ xiaozhi-esp32-server)
-        cursor = params.get("cursor", "")
+        # ⚡ OPTIMIZED: Skip tools with None handler, shorter descriptions
         tools = []
         for name, info in TOOLS.items():
-            # Sanitize tool name để tương thích với server chính thức
-            sanitized_name = sanitize_tool_name(name) if 'sanitize_tool_name' in dir() else name
-            # Rút gọn description MẠNH để giảm message size (fix "message too big" error)
+            handler = info.get("handler")
+            if handler is None:
+                continue  # ⚡ Skip unavailable tools → giảm message size
+            
+            # Rút gọn description MẠNH (80 chars thay vì 100)
             description = info["description"]
-            if len(description) > 100:
-                description = description[:97] + "..."
+            if len(description) > 80:
+                description = description[:77] + "..."
             
             tool = {
-                "name": name,  # Giữ nguyên tên gốc để handler hoạt động
+                "name": name,
                 "description": description, 
                 "inputSchema": {"type": "object", "properties": {}, "required": []}
             }
             for pname, pinfo in info["parameters"].items():
-                # Rút gọn parameter description MẠNH
+                # Rút gọn parameter description (60 chars)
                 param_desc = pinfo["description"]
-                if len(param_desc) > 80:
-                    param_desc = param_desc[:77] + "..."
+                if len(param_desc) > 60:
+                    param_desc = param_desc[:57] + "..."
                 
                 tool["inputSchema"]["properties"][pname] = {"type": pinfo["type"], "description": param_desc}
                 if pinfo.get("required"):
                     tool["inputSchema"]["required"].append(pname)
             tools.append(tool)
         
-        # Log số lượng tools
         print(f"📋 [tools/list] Returning {len(tools)} tools to robot")
-        
-        # Response theo format chuẩn với optional nextCursor
-        return {"tools": tools}  # nextCursor sẽ được thêm nếu cần pagination
+        return {"tools": tools}
     elif method == "tools/call":
         tool_name = params.get("name")
         args = params.get("arguments", {})
-        print(f"🔧 [Tool Call] {tool_name} with args: {args}")
         
-        # Lưu tool call vào history
-        add_to_conversation(
-            role="tool",
-            content=f"Tool: {tool_name}",
-            metadata={
-                "tool_name": tool_name,
-                "arguments": args,
-                "event_type": "tool_call"
-            }
-        )
+        import time
+        start_time = time.time()
+        print(f"🔧 [Tool] {tool_name}({json.dumps(args, ensure_ascii=False)[:100]})")
         
         if tool_name not in TOOLS:
-            error_msg = f"Error: Tool '{tool_name}' not found"
-            print(f"❌ {error_msg}")
-            add_to_conversation(role="tool", content=error_msg, metadata={"error": True})
-            return {"content": [{"type": "text", "text": error_msg}], "isError": True}
+            return {"content": [{"type": "text", "text": f"Tool '{tool_name}' không tồn tại"}], "isError": True}
         
-        # Retry mechanism (từ xiaozhi-esp32-server)
-        max_retries = MAX_TOOL_RETRIES
-        retry_interval = TOOL_RETRY_INTERVAL
+        handler = TOOLS[tool_name]["handler"]
+        if handler is None:
+            return {"content": [{"type": "text", "text": f"Tool '{tool_name}' không khả dụng trên Docker"}], "isError": True}
+        
+        # ⚡ OPTIMIZED: Retry giảm từ 3→2, interval từ 2s→0.5s  
         last_error = None
-        
-        for attempt in range(max_retries):
+        for attempt in range(MAX_TOOL_RETRIES):
             try:
-                handler = TOOLS[tool_name]["handler"]
-                if handler is None:
-                    error_msg = f"Tool '{tool_name}' không khả dụng (thiếu module). Vui lòng dùng tool khác."
-                    print(f"❌ [Tool] {tool_name}: handler is None (missing dependency)")
-                    return {"content": [{"type": "text", "text": error_msg}], "isError": True}
                 result = await handler(**args)
-                print(f"✅ [Tool Result] {tool_name}: {result}")
                 
-                # Thêm VLC context vào music-related tools
-                music_tools = ['smart_music_control', 'play_music', 'pause_music', 'resume_music', 
-                              'stop_music', 'music_next', 'music_previous', 'music_volume', 
-                              'get_music_status', 'list_music', 'search_music', 'detect_and_execute_music']
-                if tool_name in music_tools:
-                    result["_vlc_hint"] = "🎵 Đang dùng Python-VLC Player nội bộ. Tiếp tục dùng smart_music_control() cho các lệnh nhạc tiếp theo."
+                elapsed = time.time() - start_time
+                # ⚡ Chỉ log kết quả ngắn gọn
+                result_preview = str(result)[:100] if result else "None"
+                print(f"✅ [{tool_name}] {elapsed:.1f}s | {result_preview}")
                 
-                # Lưu tool result vào history
-                add_to_conversation(
-                    role="tool",
-                    content=json.dumps(result, ensure_ascii=False),
-                    metadata={
-                        "tool_name": tool_name,
-                        "success": result.get("success", True),
-                        "event_type": "tool_result",
-                        "attempt": attempt + 1
-                    }
-                )
+                # ⚡ ASYNC conversation logging (non-blocking)
+                asyncio.ensure_future(_async_log_tool_result(tool_name, args, result, attempt + 1))
                 
-                # ⚡ ĐẶC BIỆT: Với get_knowledge_context, trả về context trực tiếp để LLM dễ đọc
-                if tool_name == "get_knowledge_context" and isinstance(result, dict):
-                    if result.get("success") and result.get("context"):
-                        # Trả về context trực tiếp - LLM đọc và trả lời ngay (giới hạn 2000 ký tự)
-                        truncated_context = smart_truncate_for_llm(result["context"], MAX_LLM_RESPONSE_CHARS)
-                        return {"content": [{"type": "text", "text": truncated_context}]}
-                    elif not result.get("success"):
-                        # Không tìm thấy → trả về message lỗi
-                        error_msg = result.get("error", "Không tìm thấy thông tin trong cơ sở dữ liệu")
-                        return {"content": [{"type": "text", "text": f"❌ {error_msg}"}]}
+                # ⚡ FAST PATH: Trả message/text trực tiếp nếu có
+                if isinstance(result, dict):
+                    # Path 1: Knowledge context → trả context trực tiếp
+                    if tool_name == "get_knowledge_context":
+                        if result.get("success") and result.get("context"):
+                            return {"content": [{"type": "text", "text": smart_truncate_for_llm(result["context"], MAX_LLM_RESPONSE_CHARS)}]}
+                        elif not result.get("success"):
+                            return {"content": [{"type": "text", "text": result.get("error", "Không tìm thấy")}]}
+                    
+                    # Path 2: AI tools → trả response_text trực tiếp  
+                    if tool_name in ("ask_gemini", "ask_gpt4", "gemini_smart_analyze"):
+                        if result.get("success") and result.get("response_text"):
+                            text = clean_markdown_for_tts(result["response_text"])
+                            return {"content": [{"type": "text", "text": smart_truncate_for_llm(text, MAX_LLM_RESPONSE_CHARS)}]}
+                    
+                    # Path 3: Có message ngắn → trả trực tiếp (không cần format phức tạp)
+                    if result.get("message") and len(str(result.get("message", ""))) < 500:
+                        msg = result["message"]
+                        # Thêm data quan trọng nếu có
+                        if result.get("data") and isinstance(result["data"], (str, int, float)):
+                            msg += f" | {result['data']}"
+                        return {"content": [{"type": "text", "text": msg}]}
                 
-                # ⚡ ĐẶC BIỆT: Với ask_gemini, ask_gpt4, gemini_smart_analyze - trả về response text cho LLM cloud tổng hợp
-                # Giống cách web_search hoạt động: trả data đầy đủ → LLM cloud TỰ TÓM TẮT → robot nói
-                if tool_name in ["ask_gemini", "ask_gpt4", "gemini_smart_analyze"] and isinstance(result, dict):
-                    if result.get("success") and result.get("response_text"):
-                        response_text = result["response_text"]
-                        # Clean markdown để LLM dễ đọc (nhưng KHÔNG truncate - để LLM cloud tự tóm tắt)
-                        response_text = clean_markdown_for_tts(response_text)
-                        print(f"[{tool_name}] Cleaned response: {len(response_text)} chars (LLM cloud sẽ tóm tắt)")
-                        # Trả về TEXT trực tiếp, LLM cloud sẽ tự tóm tắt trước khi robot nói
-                        return {
-                            "content": [{"type": "text", "text": response_text}]
-                        }
-                
-                # 🔄 TRUNCATE: Giới hạn response dưới 2000 ký tự cho LLM
-                formatted_response = format_result_for_llm(result, MAX_LLM_RESPONSE_CHARS)
-                return {"content": [{"type": "text", "text": formatted_response}]}
+                # Default: format result for LLM
+                formatted = format_result_for_llm(result, MAX_LLM_RESPONSE_CHARS)
+                return {"content": [{"type": "text", "text": formatted}]}
             except Exception as e:
                 last_error = e
-                if attempt < max_retries - 1:
-                    print(f"⚠️ [Tool Retry] {tool_name} failed (attempt {attempt + 1}/{max_retries}): {e}")
-                    await asyncio.sleep(retry_interval)
+                if attempt < MAX_TOOL_RETRIES - 1:
+                    print(f"⚠️ [Retry] {tool_name} attempt {attempt+1}: {e}")
+                    await asyncio.sleep(TOOL_RETRY_INTERVAL)
                 else:
-                    error_msg = f"Error calling {tool_name} after {max_retries} attempts: {str(e)}"
-                    print(f"❌ {error_msg}")
-                    import traceback
-                    traceback.print_exc()
-                    add_to_conversation(role="tool", content=error_msg, metadata={"error": True})
-                    return {"content": [{"type": "text", "text": error_msg}], "isError": True}
+                    elapsed = time.time() - start_time
+                    print(f"❌ [{tool_name}] Failed after {MAX_TOOL_RETRIES} attempts ({elapsed:.1f}s): {e}")
+                    return {"content": [{"type": "text", "text": f"Lỗi {tool_name}: {str(e)[:200]}"}], "isError": True}
+    
+    # Ping/notifications - respond quickly  
+    if method == "ping":
+        return {}
+    if method and method.startswith("notifications/"):
+        return {}
+    
     return {"error": f"Unknown method: {method}"}
+
+
+async def _async_log_tool_result(tool_name, args, result, attempt):
+    """Non-blocking tool result logging"""
+    try:
+        add_to_conversation(
+            role="tool",
+            content=json.dumps(result, ensure_ascii=False)[:500],
+            metadata={"tool_name": tool_name, "success": result.get("success", True) if isinstance(result, dict) else True, "event_type": "tool_result", "attempt": attempt}
+        )
+    except:
+        pass
 
 # ============================================================
 # 🔍 CONNECTION DIAGNOSTICS - Chẩn đoán lỗi kết nối
@@ -13139,10 +13570,16 @@ async def xiaozhi_websocket_client(device_index: int = 0):
     
     while True:
         try:
+            # Kiểm tra xem device_index có trong config không
+            if device_index >= len(endpoints_config):
+                # Device này chưa được cấu hình, đợi và kiểm tra lại
+                await asyncio.sleep(30)
+                continue
+                
             ep = endpoints_config[device_index]
             if not ep.get("enabled") or not ep.get("token"):
-                # Thiết bị này chưa có token, chờ và thử lại
-                await asyncio.sleep(10)
+                # Thiết bị disabled hoặc chưa có token, chờ 3s rồi kiểm tra lại
+                await asyncio.sleep(3)
                 continue
             
             ws_url = f"wss://api.xiaozhi.me/mcp/?token={ep['token']}"
@@ -13350,10 +13787,16 @@ async def xiaozhi_websocket_client(device_index: int = 0):
             else:
                 wait = min(INITIAL_DELAY * (2 ** min(retry - FAST_RETRY_COUNT, 4)), MAX_DELAY)
             
-            print(f"❌ [Xiaozhi] Error ({ep['name']}): {e} (retry in {wait}s)")
+            # Get device name safely
+            device_name = f"Device {device_index}"
+            if device_index < len(endpoints_config):
+                device_name = endpoints_config[device_index].get('name', device_name)
             
-            # Chẩn đoán lỗi sau 3 lần thất bại liên tiếp
-            if consecutive_errors >= 3:
+            print(f"❌ [Xiaozhi] Error ({device_name}): {e} (retry in {wait}s)")
+            
+            # Chẩn đoán lỗi sau 3 lần thất bại liên tiếp (chỉ nếu có endpoint config)
+            if consecutive_errors >= 3 and device_index < len(endpoints_config):
+                ep = endpoints_config[device_index]
                 print(f"🔍 [Xiaozhi] Đang chẩn đoán lỗi kết nối...")
                 diagnosis = await diagnose_connection_error(ep['name'], ep.get('token', ''), e)
                 log_connection_error(diagnosis)
@@ -14721,58 +15164,9 @@ async def index():
                     <button class="close-btn" onclick="closeSettingsModal()">&times;</button>
                 </div>
                 <div class="modal-body">
-                    <!-- 3 ENDPOINT SECTIONS -->
-                    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px;margin-bottom:25px;">
-                        <!-- Thiết bị 1 -->
-                        <div id="device-1-card" style="border:2px solid #10b981;border-radius:8px;padding:15px;background:#f0fdf4;position:relative;">
-                            <div style="position:absolute;top:10px;right:10px;">
-                                <span id="device-1-indicator" class="connection-indicator" style="display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:12px;background:#d1fae5;color:#047857;font-size:0.75em;font-weight:bold;">
-                                    <span class="status-dot" style="width:8px;height:8px;border-radius:50%;background:#6b7280;"></span>
-                                    Chưa kết nối
-                                </span>
-                            </div>
-                            <label for="endpoint-url-1" style="color:#047857;font-weight:600;display:flex;align-items:center;gap:8px;">
-                                📱 Thiết bị 1
-                            </label>
-                            <input type="text" id="endpoint-url-1" placeholder="JWT token thiết bị 1..." style="margin-top:8px;border:2px solid #10b981;" />
-                            <p style="color:#065f46;font-size:0.85em;margin-top:5px;margin-bottom:0;">
-                                Token thật từ Claude Desktop
-                            </p>
-                        </div>
-                        
-                        <!-- Thiết bị 2 -->
-                        <div id="device-2-card" style="border:2px solid #3b82f6;border-radius:8px;padding:15px;background:#eff6ff;position:relative;">
-                            <div style="position:absolute;top:10px;right:10px;">
-                                <span id="device-2-indicator" class="connection-indicator" style="display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:12px;background:#dbeafe;color:#1e40af;font-size:0.75em;font-weight:bold;">
-                                    <span class="status-dot" style="width:8px;height:8px;border-radius:50%;background:#6b7280;"></span>
-                                    Chưa kết nối
-                                </span>
-                            </div>
-                            <label for="endpoint-url-2" style="color:#1e40af;font-weight:600;display:flex;align-items:center;gap:8px;">
-                                📱 Thiết bị 2
-                            </label>
-                            <input type="text" id="endpoint-url-2" placeholder="JWT token thiết bị 2..." style="margin-top:8px;border:2px solid #3b82f6;" />
-                            <p style="color:#1e3a8a;font-size:0.85em;margin-top:5px;margin-bottom:0;">
-                                MCP connection 2
-                            </p>
-                        </div>
-                        
-                        <!-- Thiết bị 3 -->
-                        <div id="device-3-card" style="border:2px solid #f59e0b;border-radius:8px;padding:15px;background:#fffbeb;position:relative;">
-                            <div style="position:absolute;top:10px;right:10px;">
-                                <span id="device-3-indicator" class="connection-indicator" style="display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:12px;background:#fef3c7;color:#b45309;font-size:0.75em;font-weight:bold;">
-                                    <span class="status-dot" style="width:8px;height:8px;border-radius:50%;background:#6b7280;"></span>
-                                    Chưa kết nối
-                                </span>
-                            </div>
-                            <label for="endpoint-url-3" style="color:#b45309;font-weight:600;display:flex;align-items:center;gap:8px;">
-                                📱 Thiết bị 3
-                            </label>
-                            <input type="text" id="endpoint-url-3" placeholder="JWT token thiết bị 3..." style="margin-top:8px;border:2px solid #f59e0b;" />
-                            <p style="color:#78350f;font-size:0.85em;margin-top:5px;margin-bottom:0;">
-                                MCP connection 3
-                            </p>
-                        </div>
+                    <!-- DYNAMIC 100 ENDPOINT SECTIONS -->
+                    <div id="devices-container" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:20px;margin-bottom:25px;max-height:600px;overflow-y:auto;padding:10px;">
+                        <!-- Devices will be generated dynamically by JavaScript -->
                     </div>
                     
                     <p style="color:#666;font-size:0.9em;text-align:center;margin-top:-10px;margin-bottom:20px;">
@@ -14813,6 +15207,34 @@ async def index():
                                 </a>
                                 <br>
                                 <span id="gemini-key-status" style="color:#10b981;font-weight:600;"></span>
+                            </p>
+                            
+                            <!-- 🔄 GEMINI BACKUP KEY -->
+                            <label for="gemini-api-key-backup" style="display:flex;align-items:center;gap:10px;margin-top:10px;">
+                                🔄 Gemini API Key <span style="color:#f59e0b;font-weight:700;">(Dự phòng)</span>
+                                <span style="color:#10b981;font-size:0.85em;font-weight:normal;">(Auto-save)</span>
+                            </label>
+                            <div class="api-key-input-container">
+                                <input 
+                                    type="password" 
+                                    id="gemini-api-key-backup" 
+                                    placeholder="AIzaSyXXXXXXXXXXXXXXXXXX... (key dự phòng)"
+                                    oninput="autoSaveGeminiBackupKey()"
+                                    style="font-size:0.9em;border-color:#f59e0b;"
+                                />
+                                <div class="input-icons">
+                                    <button type="button" class="api-key-icon-btn" onclick="toggleApiKeyVisibility('gemini-api-key-backup', this)" title="Hiện/Ẩn API key">
+                                        👁
+                                    </button>
+                                    <button type="button" class="api-key-icon-btn" onclick="copyApiKey('gemini-api-key-backup', this)" title="Copy API key">
+                                        📋
+                                    </button>
+                                </div>
+                            </div>
+                            <p style="color:#f59e0b;font-size:0.85em;margin-top:-10px;">
+                                🔄 Tự động chuyển sang key này khi key chính bị lỗi/hết quota
+                                <br>
+                                <span id="gemini-backup-key-status" style="color:#10b981;font-weight:600;"></span>
                             </p>
                             
                             <label for="gemini-model" style="margin-top:15px;display:block;">
@@ -14905,6 +15327,34 @@ async def index():
                                 <span style="font-size:0.85em;">🆓 2500 queries/tháng miễn phí | 🎯 Google Search chính xác hơn DuckDuckGo</span>
                                 <br>
                                 <span id="serper-key-status" style="color:#10b981;font-weight:600;"></span>
+                            </p>
+                            
+                            <!-- 🔄 SERPER BACKUP KEY -->
+                            <label for="serper-api-key-backup" style="display:flex;align-items:center;gap:10px;margin-top:10px;">
+                                🔄 Serper API Key <span style="color:#f59e0b;font-weight:700;">(Dự phòng)</span>
+                                <span style="color:#10b981;font-size:0.85em;font-weight:normal;">(Auto-save)</span>
+                            </label>
+                            <div class="api-key-input-container">
+                                <input 
+                                    type="password" 
+                                    id="serper-api-key-backup" 
+                                    placeholder="abcdef1234567890... (key dự phòng)"
+                                    oninput="autoSaveSerperBackupKey()"
+                                    style="font-size:0.9em;border-color:#f59e0b;"
+                                />
+                                <div class="input-icons">
+                                    <button type="button" class="api-key-icon-btn" onclick="toggleApiKeyVisibility('serper-api-key-backup', this)" title="Hiện/Ẩn API key">
+                                        👁
+                                    </button>
+                                    <button type="button" class="api-key-icon-btn" onclick="copyApiKey('serper-api-key-backup', this)" title="Copy API key">
+                                        📋
+                                    </button>
+                                </div>
+                            </div>
+                            <p style="color:#f59e0b;font-size:0.85em;margin-top:-10px;">
+                                🔄 Tự động chuyển sang key này khi key chính bị lỗi/hết quota
+                                <br>
+                                <span id="serper-backup-key-status" style="color:#10b981;font-weight:600;"></span>
                             </p>
                         </div>
                     </div>
@@ -16043,24 +16493,82 @@ async def index():
             }
         }
         
+        const MAX_DEVICES = 100;  // Support up to 100 endpoints
+        
+        // Generate device cards dynamically
+        function generateDeviceCards() {
+            const container = document.getElementById('devices-container');
+            if (!container) {
+                console.error('devices-container not found!');
+                return;
+            }
+            
+            const colors = [
+                {border:'#10b981',bg:'#f0fdf4',indicator:'#d1fae5',text:'#047857'},
+                {border:'#3b82f6',bg:'#eff6ff',indicator:'#dbeafe',text:'#1e40af'},
+                {border:'#f59e0b',bg:'#fffbeb',indicator:'#fef3c7',text:'#b45309'},
+                {border:'#8b5cf6',bg:'#f5f3ff',indicator:'#e9d5ff',text:'#6b21a8'},
+                {border:'#ec4899',bg:'#fdf2f8',indicator:'#fce7f3',text:'#9f1239'}
+            ];
+            
+            for (let i = 1; i <= MAX_DEVICES; i++) {
+                const color = colors[(i-1) % colors.length];
+                
+                const card = document.createElement('div');
+                card.id = `device-${i}-card`;
+                card.style.cssText = `border:2px solid ${color.border};border-radius:8px;padding:12px;background:${color.bg};position:relative;`;
+                
+                card.innerHTML = `
+                    <div style="position:absolute;top:8px;right:8px;">
+                        <span id="device-${i}-indicator" class="connection-indicator" style="display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:10px;background:${color.indicator};color:${color.text};font-size:0.7em;font-weight:bold;">
+                            <span class="status-dot" style="width:6px;height:6px;border-radius:50%;background:#6b7280;"></span>
+                            Chưa kết nối
+                        </span>
+                    </div>
+                    <label for="endpoint-url-${i}" style="color:${color.text};font-weight:600;font-size:0.9em;display:flex;align-items:center;gap:6px;">
+                        📱 Thiết bị ${i}
+                    </label>
+                    <input type="text" id="endpoint-url-${i}" placeholder="JWT token ${i}..." style="margin-top:6px;border:2px solid ${color.border};font-size:0.85em;padding:6px;" />
+                    <div style="display:flex;gap:6px;margin-top:8px;">
+                        <button onclick="connectDevice(${i})" id="connect-btn-${i}" style="flex:1;padding:5px;font-size:0.75em;background:#10b981;color:white;border:none;border-radius:4px;cursor:pointer;">
+                            🔗 Kết nối
+                        </button>
+                        <button onclick="disconnectDevice(${i})" id="disconnect-btn-${i}" style="flex:1;padding:5px;font-size:0.75em;background:#ef4444;color:white;border:none;border-radius:4px;cursor:pointer;">
+                            🔌 Ngắt
+                        </button>
+                        <button onclick="deleteDevice(${i})" style="flex:1;padding:5px;font-size:0.75em;background:#64748b;color:white;border:none;border-radius:4px;cursor:pointer;">
+                            🗑️ Xóa
+                        </button>
+                    </div>
+                `;
+                
+                container.appendChild(card);
+            }
+        }
+        
+        // Call this on page load
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', generateDeviceCards);
+        } else {
+            generateDeviceCards();
+        }
+        
         async function loadCurrentEndpoint() {
             try {
                 const response = await fetch('/api/endpoints');
                 const data = await response.json();
                 
-                // 🔥 FIX: Định nghĩa activeDevice từ active_index
                 const activeIndex = data.active_index || 0;
                 const activeDevice = data.endpoints && data.endpoints[activeIndex] ? data.endpoints[activeIndex] : null;
                 
-                // Load all 3 device tokens into separate input fields
-                if (data.endpoints && data.endpoints.length >= 3) {
-                    const input1 = document.getElementById('endpoint-url-1');
-                    const input2 = document.getElementById('endpoint-url-2');
-                    const input3 = document.getElementById('endpoint-url-3');
-                    
-                    if (input1) input1.value = data.endpoints[0]?.token || '';
-                    if (input2) input2.value = data.endpoints[1]?.token || '';
-                    if (input3) input3.value = data.endpoints[2]?.token || '';
+                // Load all device tokens (up to MAX_DEVICES)
+                if (data.endpoints) {
+                    for (let i = 0; i < Math.min(data.endpoints.length, MAX_DEVICES); i++) {
+                        const input = document.getElementById(`endpoint-url-${i+1}`);
+                        if (input) {
+                            input.value = data.endpoints[i]?.token || '';
+                        }
+                    }
                 }
                 
                 // Load Gemini API key (luôn set, kể cả empty)
@@ -16093,6 +16601,28 @@ async def index():
                         updateSerperKeyStatus('✓ Google Search sẵn sàng', '#10b981');
                     } else {
                         updateSerperKeyStatus('', '');
+                    }
+                }
+                
+                // Load Gemini Backup API key
+                const geminiBackupInput = document.getElementById('gemini-api-key-backup');
+                if (geminiBackupInput) {
+                    geminiBackupInput.value = data.gemini_api_key_backup || '';
+                    if (data.gemini_api_key_backup) {
+                        updateGeminiBackupKeyStatus('✓ Key dự phòng đã cấu hình', '#10b981');
+                    } else {
+                        updateGeminiBackupKeyStatus('', '');
+                    }
+                }
+                
+                // Load Serper Backup API key
+                const serperBackupInput = document.getElementById('serper-api-key-backup');
+                if (serperBackupInput) {
+                    serperBackupInput.value = data.serper_api_key_backup || '';
+                    if (data.serper_api_key_backup) {
+                        updateSerperBackupKeyStatus('✓ Key dự phòng đã cấu hình', '#10b981');
+                    } else {
+                        updateSerperBackupKeyStatus('', '');
                     }
                 }
                 
@@ -16285,60 +16815,187 @@ async def index():
             }
         }
         
-        async function saveEndpoint() {
+        // 🔄 Auto-save Gemini BACKUP API key
+        let geminiBackupSaveTimeout;
+        async function autoSaveGeminiBackupKey() {
+            clearTimeout(geminiBackupSaveTimeout);
+            geminiBackupSaveTimeout = setTimeout(async () => {
+                const apiKey = document.getElementById('gemini-api-key-backup').value.trim();
+                try {
+                    updateGeminiBackupKeyStatus(apiKey ? '💾 Đang lưu...' : '💾 Xóa key...', '#f59e0b');
+                    const response = await fetch('/api/gemini-key-backup', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({api_key: apiKey})
+                    });
+                    const result = await response.json();
+                    if (result.success) {
+                        updateGeminiBackupKeyStatus('✓ Key dự phòng đã lưu', '#10b981');
+                        setTimeout(() => updateGeminiBackupKeyStatus('✓ Key dự phòng đã cấu hình', '#10b981'), 2000);
+                    } else {
+                        updateGeminiBackupKeyStatus('❌ Lỗi: ' + result.error, '#ef4444');
+                    }
+                } catch (error) {
+                    updateGeminiBackupKeyStatus('❌ Lỗi kết nối', '#ef4444');
+                }
+            }, 1000);
+        }
+        
+        function updateGeminiBackupKeyStatus(message, color) {
+            const statusEl = document.getElementById('gemini-backup-key-status');
+            if (statusEl) { statusEl.textContent = message; statusEl.style.color = color; }
+        }
+        
+        // 🔄 Auto-save Serper BACKUP API key
+        let serperBackupSaveTimeout;
+        async function autoSaveSerperBackupKey() {
+            clearTimeout(serperBackupSaveTimeout);
+            serperBackupSaveTimeout = setTimeout(async () => {
+                const apiKey = document.getElementById('serper-api-key-backup').value.trim();
+                try {
+                    updateSerperBackupKeyStatus(apiKey ? '💾 Đang lưu...' : '💾 Xóa key...', '#f59e0b');
+                    const response = await fetch('/api/serper-key-backup', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({api_key: apiKey})
+                    });
+                    const result = await response.json();
+                    if (result.success) {
+                        updateSerperBackupKeyStatus('✓ Key dự phòng đã lưu', '#10b981');
+                        setTimeout(() => updateSerperBackupKeyStatus('✓ Key dự phòng đã cấu hình', '#10b981'), 2000);
+                    } else {
+                        updateSerperBackupKeyStatus('❌ Lỗi: ' + result.error, '#ef4444');
+                    }
+                } catch (error) {
+                    updateSerperBackupKeyStatus('❌ Lỗi kết nối', '#ef4444');
+                }
+            }, 1000);
+        }
+        
+        function updateSerperBackupKeyStatus(message, color) {
+            const statusEl = document.getElementById('serper-backup-key-status');
+            if (statusEl) { statusEl.textContent = message; statusEl.style.color = color; }
+        }
+        
+        // Disconnect device function
+        async function disconnectDevice(deviceIndex) {
             try {
-                addLog('⏳ Đang lưu endpoints...', 'info');
+                addLog(`🔌 Ngắt kết nối thiết bị ${deviceIndex}...`, 'info');
+                const response = await fetch('/api/disconnect_device', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({device_index: deviceIndex - 1})
+                });
+                const data = await response.json();
+                if (data.success) {
+                    addLog(`✅ Đã ngắt thiết bị ${deviceIndex}`, 'success');
+                    // Update indicator
+                    const indicator = document.getElementById(`device-${deviceIndex}-indicator`);
+                    if (indicator) {
+                        indicator.innerHTML = '<span class="status-dot" style="width:6px;height:6px;border-radius:50%;background:#ef4444;"></span> Đã ngắt';
+                    }
+                } else {
+                    addLog(`❌ Lỗi ngắt thiết bị ${deviceIndex}: ${data.error}`, 'error');
+                }
+            } catch (error) {
+                addLog(`❌ Lỗi ngắt thiết bị: ${error.message}`, 'error');
+            }
+        }
+        
+        // Connect device function
+        async function connectDevice(deviceIndex) {
+            try {
+                const input = document.getElementById(`endpoint-url-${deviceIndex}`);
+                const token = input ? input.value.trim() : '';
                 
-                // Lấy token từ cả 3 input fields
-                const token1 = document.getElementById('endpoint-url-1').value.trim();
-                const token2 = document.getElementById('endpoint-url-2').value.trim();
-                const token3 = document.getElementById('endpoint-url-3').value.trim();
-                
-                if (!token1 && !token2 && !token3) {
-                    addLog('❌ Vui lòng nhập ít nhất 1 JWT token!', 'error');
+                if (!token) {
+                    addLog(`❌ Thiết bị ${deviceIndex} chưa có token! Nhập token trước.`, 'error');
                     return;
                 }
+                
+                addLog(`🔗 Đang kết nối thiết bị ${deviceIndex}...`, 'info');
+                const response = await fetch('/api/connect_device', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({device_index: deviceIndex - 1})
+                });
+                const data = await response.json();
+                if (data.success) {
+                    addLog(`✅ ${data.message}`, 'success');
+                    const indicator = document.getElementById(`device-${deviceIndex}-indicator`);
+                    if (indicator) {
+                        indicator.innerHTML = '<span class="status-dot" style="width:6px;height:6px;border-radius:50%;background:#f59e0b;"></span> Đang kết nối...';
+                    }
+                } else {
+                    addLog(`❌ Lỗi kết nối thiết bị ${deviceIndex}: ${data.error}`, 'error');
+                }
+            } catch (error) {
+                addLog(`❌ Lỗi kết nối thiết bị: ${error.message}`, 'error');
+            }
+        }
+        
+        // Delete device function
+        async function deleteDevice(deviceIndex) {
+            if (!confirm(`Xóa thiết bị ${deviceIndex} khỏi hệ thống?`)) return;
+            
+            try {
+                // 🔥 FIX: Disconnect FIRST to stop websocket loop
+                await disconnectDevice(deviceIndex);
+                
+                const input = document.getElementById(`endpoint-url-${deviceIndex}`);
+                if (input) {
+                    input.value = '';  // Clear input
+                    addLog(`🗑️ Đã xóa thiết bị ${deviceIndex}`, 'info');
+                    
+                    // Auto-save after delete (force save even if no tokens left)
+                    await saveEndpoint(true);
+                }
+            } catch (error) {
+                addLog(`❌ Lỗi xóa thiết bị: ${error.message}`, 'error');
+            }
+        }
+        
+        async function saveEndpoint(forceEmpty = false) {
+            try {
+                addLog('⏳ Đang lưu endpoints...', 'info');
                 
                 // Helper function to extract token from URL or return as-is
                 function extractToken(input) {
                     if (!input) return '';
-                    
-                    // Nếu user nhập URL đầy đủ, extract token từ URL
                     if (input.startsWith('wss://') || input.startsWith('http')) {
                         try {
                             const url = new URL(input);
                             const tokenParam = url.searchParams.get('token');
-                            if (tokenParam) {
-                                return tokenParam;
-                            }
+                            if (tokenParam) return tokenParam;
                         } catch (e) {
-                            return input; // Return as-is if parse fails
+                            return input;
                         }
                     }
                     return input;
                 }
                 
-                const cleanToken1 = extractToken(token1);
-                const cleanToken2 = extractToken(token2);
-                const cleanToken3 = extractToken(token3);
+                // Collect tokens from all MAX_DEVICES input fields
+                const devices = [];
+                let hasToken = false;
                 
-                // Lấy danh sách thiết bị hiện tại
-                const response = await fetch('/api/endpoints');
-                const data = await response.json();
-                
-                // Update all 3 devices
-                const devices = data.endpoints.map((device, index) => {
-                    let token = '';
-                    if (index === 0) token = cleanToken1;
-                    else if (index === 1) token = cleanToken2;
-                    else if (index === 2) token = cleanToken3;
+                for (let i = 1; i <= MAX_DEVICES; i++) {
+                    const input = document.getElementById(`endpoint-url-${i}`);
+                    const token = input ? extractToken(input.value.trim()) : '';
                     
-                    return {
-                        name: device.name || `Thiết bị ${index + 1}`,
+                    devices.push({
+                        name: `Thiết bị ${i}`,
                         token: token,
-                        enabled: token.length > 0  // Auto-enable if has token
-                    };
-                });
+                        enabled: token.length > 0
+                    });
+                    
+                    if (token) hasToken = true;
+                }
+                
+                // 🔥 FIX: Allow saving with no tokens when deleting (forceEmpty=true)
+                if (!hasToken && !forceEmpty) {
+                    addLog('❌ Vui lòng nhập ít nhất 1 JWT token!', 'error');
+                    return;
+                }
                 
                 // Lưu cấu hình
                 const saveResponse = await fetch('/api/endpoints/save', {
@@ -16352,13 +17009,9 @@ async def index():
                 if (saveData.success) {
                     addLog('✅ Đã lưu endpoints thành công!', 'success');
                     
-                    // Show which devices were updated
-                    let updatedCount = 0;
-                    if (cleanToken1) { addLog('  📱 Thiết bị 1: Đã cập nhật', 'success'); updatedCount++; }
-                    if (cleanToken2) { addLog('  📱 Thiết bị 2: Đã cập nhật', 'success'); updatedCount++; }
-                    if (cleanToken3) { addLog('  📱 Thiết bị 3: Đã cập nhật', 'success'); updatedCount++; }
-                    
-                    addLog(`📡 ${updatedCount} thiết bị sẽ tự động kết nối...`, 'info');
+                    // Count updated devices
+                    const updatedCount = devices.filter(d => d.token.length > 0).length;
+                    addLog(`📡 ${updatedCount} thiết bị đã được cập nhật`, 'success');
                     
                     closeSettingsModal();
                     
@@ -16375,9 +17028,17 @@ async def index():
         }
         
         function copyFullUrl() {
-            // Get tokens from all 3 fields
-            const token1 = document.getElementById('endpoint-url-1').value.trim();
-            const token2 = document.getElementById('endpoint-url-2').value.trim();
+            // Get token from first non-empty field
+            let firstToken = '';
+            for (let i = 1; i <= MAX_DEVICES; i++) {
+                const input = document.getElementById(`endpoint-url-${i}`);
+                if (input && input.value.trim()) {
+                    firstToken = input.value.trim();
+                    break;
+                }
+            }
+            const token1 = firstToken;
+            const token2 = '';
             const token3 = document.getElementById('endpoint-url-3').value.trim();
             
             if (!token1 && !token2 && !token3) {
@@ -18696,14 +19357,23 @@ async def api_llm_connection_status():
         "devices": []
     }
     
-    for i in range(3):
-        device_status = {
-            "index": i,
-            "name": endpoints_config[i].get("name", f"Thiết bị {i + 1}"),
-            "connected": xiaozhi_connected.get(i, False),
-            "enabled": endpoints_config[i].get("enabled", False),
-            "has_token": bool(endpoints_config[i].get("token", ""))
-        }
+    for i in range(MAX_DEVICES):
+        if i < len(endpoints_config):
+            device_status = {
+                "index": i,
+                "name": endpoints_config[i].get("name", f"Thiết bị {i + 1}"),
+                "connected": xiaozhi_connected.get(i, False),
+                "enabled": endpoints_config[i].get("enabled", False),
+                "has_token": bool(endpoints_config[i].get("token", ""))
+            }
+        else:
+            device_status = {
+                "index": i,
+                "name": f"Thiết bị {i + 1}",
+                "connected": False,
+                "enabled": False,
+                "has_token": False
+            }
         status["devices"].append(device_status)
     
     status["active_index"] = active_endpoint_index
@@ -21475,13 +22145,15 @@ async def get_logo():
 
 @app.get("/api/endpoints")
 async def get_endpoints():
-    global GEMINI_API_KEY, OPENAI_API_KEY, SERPER_API_KEY
+    global GEMINI_API_KEY, OPENAI_API_KEY, SERPER_API_KEY, GEMINI_API_KEY_BACKUP, SERPER_API_KEY_BACKUP
     return {
         "endpoints": endpoints_config,
         "active_index": active_endpoint_index,
         "gemini_api_key": GEMINI_API_KEY,
         "openai_api_key": OPENAI_API_KEY,
-        "serper_api_key": SERPER_API_KEY
+        "serper_api_key": SERPER_API_KEY,
+        "gemini_api_key_backup": GEMINI_API_KEY_BACKUP,
+        "serper_api_key_backup": SERPER_API_KEY_BACKUP
     }
 
 @app.get("/api/endpoints/status")
@@ -22568,11 +23240,90 @@ async def save_endpoints(data: dict):
             should_reconnect[active_endpoint_index] = True
             print(f"🔄 [Endpoint] Token changed for active device {active_endpoint_index}. Triggering reconnect...")
         
+        # 🔥 FIX: Tạo websocket task cho devices mới có token (index >= 10 không có listener)
+        for i, ep in enumerate(endpoints_config):
+            if ep.get('token') and ep.get('enabled') and i >= 10:
+                # Kiểm tra xem đã có task chưa (nếu chưa connected thì tạo mới)
+                if not xiaozhi_connected.get(i) and not xiaozhi_connections.get(i):
+                    asyncio.create_task(xiaozhi_websocket_client(device_index=i))
+                    print(f"📡 [Endpoint] Created WebSocket task for new device {i+1}")
+        
         return {"success": True, "message": "Đã lưu cấu hình"}
     except Exception as e:
         print(f"❌ [Endpoint] Error saving: {e}")
         import traceback
         traceback.print_exc()
+        return {"success": False, "error": str(e)}
+
+@app.post("/api/disconnect_device")
+async def disconnect_device(data: dict):
+    """Disconnect a specific device - chỉ disable, KHÔNG xóa token"""
+    global xiaozhi_connected, xiaozhi_connections, should_reconnect, endpoints_config
+    try:
+        device_index = data.get('device_index', 0)
+        
+        if device_index < 0 or device_index >= MAX_DEVICES:
+            return {"success": False, "error": "Invalid device index"}
+        
+        # Mark device as disconnected
+        xiaozhi_connected[device_index] = False
+        should_reconnect[device_index] = False
+        
+        # 🔥 FIX: Chỉ set enabled=False, giữ nguyên token để có thể reconnect
+        if device_index < len(endpoints_config):
+            old_token = endpoints_config[device_index].get('token', '')
+            endpoints_config[device_index]['enabled'] = False
+            # KHÔNG xóa token - giữ nguyên để nút Kết nối hoạt động
+            save_endpoints_to_file(endpoints_config, active_endpoint_index, force_save=True)
+            print(f"🔌 [Disconnect] Device {device_index+1} disabled (token kept: {'yes' if old_token else 'no'})")
+        
+        # Close websocket if exists
+        if xiaozhi_connections.get(device_index):
+            try:
+                await xiaozhi_connections[device_index].close()
+            except Exception:
+                pass
+            xiaozhi_connections[device_index] = None
+        
+        print(f"🔌 [Disconnect] Device {device_index+1} disconnected")
+        return {"success": True, "message": f"Đã ngắt thiết bị {device_index+1}"}
+    except Exception as e:
+        print(f"❌ [Disconnect] Error: {e}")
+        return {"success": False, "error": str(e)}
+
+@app.post("/api/connect_device")
+async def connect_device(data: dict):
+    """Re-connect a disconnected device - enable lại và trigger reconnect"""
+    global endpoints_config, should_reconnect
+    try:
+        device_index = data.get('device_index', 0)
+        
+        if device_index < 0 or device_index >= MAX_DEVICES:
+            return {"success": False, "error": "Invalid device index"}
+        
+        if device_index >= len(endpoints_config):
+            return {"success": False, "error": "Thiết bị chưa được cấu hình"}
+        
+        token = endpoints_config[device_index].get('token', '')
+        if not token:
+            return {"success": False, "error": "Thiết bị chưa có token. Nhập token trước."}
+        
+        # Re-enable device
+        endpoints_config[device_index]['enabled'] = True
+        should_reconnect[device_index] = True
+        
+        # Save to file
+        save_endpoints_to_file(endpoints_config, active_endpoint_index, force_save=True)
+        
+        # 🔥 FIX: Nếu device index >= 10 (không có listener task từ startup), tạo task mới
+        if device_index >= 10:
+            asyncio.create_task(xiaozhi_websocket_client(device_index=device_index))
+            print(f"🔗 [Connect] Device {device_index+1} - created new WebSocket task")
+        
+        print(f"🔗 [Connect] Device {device_index+1} re-enabled, triggering reconnect...")
+        return {"success": True, "message": f"Đang kết nối lại thiết bị {device_index+1}..."}
+    except Exception as e:
+        print(f"❌ [Connect] Error: {e}")
         return {"success": False, "error": str(e)}
 
 @app.post("/api/gemini-key")
@@ -22709,6 +23460,61 @@ async def get_serper_key():
             "key_preview": f"...{SERPER_API_KEY[-8:]}"
         }
     return {"success": True, "has_key": False}
+
+
+# ============================================================================
+# 🔄 BACKUP API KEY ENDPOINTS
+# ============================================================================
+
+@app.post("/api/gemini-key-backup")
+async def save_gemini_backup_key(data: dict):
+    """Save Gemini BACKUP API key - Auto-fallback khi key chính bị lỗi"""
+    global GEMINI_API_KEY_BACKUP
+    try:
+        api_key = data.get('api_key', '').strip()
+        GEMINI_API_KEY_BACKUP = api_key
+        
+        if save_endpoints_to_file(endpoints_config, active_endpoint_index):
+            if api_key:
+                print(f"✅ [Gemini Backup] Key dự phòng saved (ends with ...{api_key[-8:]})")
+                return {
+                    "success": True,
+                    "message": "✓ Đã lưu Gemini key dự phòng",
+                    "key_preview": f"...{api_key[-8:]}"
+                }
+            else:
+                print("✅ [Gemini Backup] Key dự phòng cleared")
+                return {"success": True, "message": "✓ Đã xóa Gemini key dự phòng"}
+        else:
+            return {"success": False, "error": "Lỗi lưu file config"}
+    except Exception as e:
+        print(f"❌ [Gemini Backup] Error: {e}")
+        return {"success": False, "error": str(e)}
+
+@app.post("/api/serper-key-backup")
+async def save_serper_backup_key(data: dict):
+    """Save Serper BACKUP API key - Auto-fallback khi key chính bị lỗi"""
+    global SERPER_API_KEY_BACKUP
+    try:
+        api_key = data.get('api_key', '').strip()
+        SERPER_API_KEY_BACKUP = api_key
+        
+        if save_endpoints_to_file(endpoints_config, active_endpoint_index):
+            if api_key:
+                print(f"✅ [Serper Backup] Key dự phòng saved (ends with ...{api_key[-8:]})")
+                return {
+                    "success": True,
+                    "message": "✓ Đã lưu Serper key dự phòng",
+                    "key_preview": f"...{api_key[-8:]}"
+                }
+            else:
+                print("✅ [Serper Backup] Key dự phòng cleared")
+                return {"success": True, "message": "✓ Đã xóa Serper key dự phòng"}
+        else:
+            return {"success": False, "error": "Lỗi lưu file config"}
+    except Exception as e:
+        print(f"❌ [Serper Backup] Error: {e}")
+        return {"success": False, "error": str(e)}
 
 
 @app.websocket("/ws")
@@ -22875,10 +23681,31 @@ async def startup():
     
     # Enable WebSocket client with error handling
     try:
-        # Khởi tạo 3 Xiaozhi clients đồng thời
-        for i in range(3):
-            asyncio.create_task(xiaozhi_websocket_client(device_index=i))
-        print(f"✅ [Startup] WebSocket clients started for {len(endpoints_config)} devices")
+        # 🔥 FIX: Chỉ khởi tạo WebSocket client cho devices CÓ TOKEN
+        # Không tạo 100 task rỗng lãng phí tài nguyên
+        active_count = 0
+        for i in range(len(endpoints_config)):
+            ep = endpoints_config[i]
+            if ep.get('token') and ep.get('enabled'):
+                asyncio.create_task(xiaozhi_websocket_client(device_index=i))
+                active_count += 1
+                print(f"  📡 Device {i+1}: {ep.get('name', 'Unknown')} - starting...")
+        
+        # Cũng tạo 1 task "listener" cho mỗi 10 device slots để detect token mới
+        # Nhưng chỉ cần MAX 10 listener tasks (thay vì 100)
+        listener_count = 0
+        for i in range(len(endpoints_config)):
+            ep = endpoints_config[i]
+            if not ep.get('token') or not ep.get('enabled'):
+                # Tạo listener cho mỗi 10 slot trống để detect token mới từ Web UI
+                if i < 10:  # Chỉ monitor 10 slots đầu tiên
+                    asyncio.create_task(xiaozhi_websocket_client(device_index=i))
+                    listener_count += 1
+        
+        print(f"✅ [Startup] WebSocket: {active_count} active + {listener_count} listeners (total {active_count + listener_count} tasks)")
+        
+        if active_count == 0:
+            print(f"⚠️ [Startup] Không có thiết bị nào được cấu hình. Vào Web UI để nhập token.")
     except Exception as e:
         print(f"⚠️ Failed to start WebSocket clients: {e}")
 
@@ -22972,7 +23799,7 @@ if __name__ == "__main__":
     
     # Step 3: Initialize Server
     print("🚀 [3/4] Khởi động Server...")
-    print("    🌐 Web Dashboard: http://localhost:8000")
+    print("    🌐 Web Dashboard: http://localhost:9000")
     print("    📡 WebSocket MCP: Multi-device support")
     print("    🛠️  Tools: 141 công cụ AI sẵn sàng")
     print("    ✅ Server initialized")
@@ -22986,7 +23813,7 @@ if __name__ == "__main__":
     def open_browser():
         """Mo browser sau 2 giay"""
         time.sleep(2)
-        webbrowser.open("http://localhost:8000")
+        webbrowser.open("http://localhost:9000")
     
     # Khoi dong thread mo browser
     threading.Thread(target=open_browser, daemon=True).start()
@@ -23006,7 +23833,7 @@ if __name__ == "__main__":
     import sys
     if getattr(sys, 'frozen', False):
         # Disable uvicorn's default logging config when frozen
-        uvicorn.run(app, host="0.0.0.0", port=8000, log_config=None)
+        uvicorn.run(app, host="0.0.0.0", port=9000, log_config=None)
     else:
-        uvicorn.run(app, host="0.0.0.0", port=8000)
+        uvicorn.run(app, host="0.0.0.0", port=9000)
 

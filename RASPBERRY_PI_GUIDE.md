@@ -136,12 +136,22 @@ nano .env
 # Gemini API Key (BẮT BUỘC)
 GEMINI_API_KEY=AIzaSy...your_actual_key_here
 
+# 🔄 Gemini Backup Key (Dự phòng - Tùy chọn)
+GEMINI_API_KEY_BACKUP=AIzaSy...your_backup_key
+
 # OpenAI (Tùy chọn)
 OPENAI_API_KEY=sk-...your_openai_key
 
 # Serper (Tùy chọn - cho Google Search)
 SERPER_API_KEY=your_serper_key
+
+# 🔄 Serper Backup Key (Dự phòng - Tùy chọn)
+SERPER_API_KEY_BACKUP=your_serper_backup_key
 ```
+
+**💡 Lưu ý về Backup Keys:**
+- Tự động chuyển sang key dự phòng khi key chính bị lỗi/hết quota
+- Có thể cấu hình sau qua Web UI (không bắt buộc lúc đầu)
 
 **Lưu file:** `Ctrl+O`, Enter, `Ctrl+X`
 
@@ -208,14 +218,14 @@ docker compose ps
 **Kết quả mong đợi:**
 ```
 NAME            STATE   PORTS
-miniz-mcp-api   Up      0.0.0.0:8000->8000/tcp
+miniz-mcp-api   Up      0.0.0.0:9000->9000/tcp
 ```
 
 ### 5.2. Kiểm tra health
 
 ```bash
 # Test từ Pi
-curl http://localhost:8000/api/system_info
+curl http://localhost:9000/api/system_info
 
 # Xem logs
 docker compose logs --tail=50 miniz-api
@@ -233,9 +243,9 @@ Ví dụ: `192.168.1.100`
 
 Mở trình duyệt trên máy tính/điện thoại:
 
-- **Web UI:** http://192.168.1.100:8000
-- **API Docs (Swagger):** http://192.168.1.100:8000/docs
-- **System Info:** http://192.168.1.100:8000/api/system_info
+- **Web UI:** http://192.168.1.100:9000
+- **API Docs (Swagger):** http://192.168.1.100:9000/docs
+- **System Info:** http://192.168.1.100:9000/api/system_info
 
 ---
 

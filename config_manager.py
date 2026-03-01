@@ -116,12 +116,12 @@ class ConfigManager:
         self.save()
     
     def _create_default(self) -> dict:
-        """Create default config"""
+        """Create default config with 100 endpoints"""
+        MAX_DEVICES = 100
         return {
             "endpoints": [
-                {"name": "Thiết bị 1", "token": "", "enabled": False},
-                {"name": "Thiết bị 2", "token": "", "enabled": False},
-                {"name": "Thiết bị 3", "token": "", "enabled": False}
+                {"name": f"Thiết bị {i+1}", "token": "", "enabled": False} 
+                for i in range(MAX_DEVICES)
             ],
             "active_index": 0,
             "gemini_api_key": "",

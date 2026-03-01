@@ -28,7 +28,7 @@ FastAPI-based MCP (Model Context Protocol) server tối giản, chạy trong Doc
 ### 1. Clone Repository
 
 ```bash
-git clone https://github.com/nguyenconghuy2904-source/pimcp.git
+git clone https://github.com/conghuy93/pimcp.git
 cd pimcp/docker
 ```
 
@@ -113,7 +113,8 @@ Chi tiết xem: [docker/DOCKER_README.md](docker/DOCKER_README.md)
 ## 👨‍💻 Author
 
 **Nguyen Cong Huy**
-- GitHub: [@nguyenconghuy2904-source](https://github.com/nguyenconghuy2904-source)
+- GitHub: [@conghuy93](https://github.com/conghuy93)
+- Repository: [conghuy93/pimcp](https://github.com/conghuy93/pimcp)
 
 ---
 
